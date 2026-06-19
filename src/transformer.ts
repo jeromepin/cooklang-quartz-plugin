@@ -6,6 +6,7 @@ import type { QuartzTransformerPlugin, BuildCtx } from "@quartz-community/types"
 import type { CooklangTransformerOptions } from "./types"
 import { parseCooklang } from "./parser"
 import { buildRecipeHTML } from "./renderer"
+import { fromHtml } from "hast-util-from-html"
 import recipeStyle from "./components/styles/recipe.scss"
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore – .inline.ts imports are resolved to strings by tsup
@@ -41,8 +42,8 @@ export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransf
         const slugs = ctx.allSlugs as unknown as string[]
 
         const html = buildRecipeHTML(file.data.cooklang, fm, locale, slugs)
-
-        ;(tree as unknown as { children: unknown[] }).children = [{ type: "raw", value: html }]
+        const fragment = fromHtml(html, { fragment: true })
+        tree.children = fragment.children as HastRoot["children"]
       }
       return [cooklangRehype]
     },
