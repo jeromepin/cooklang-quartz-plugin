@@ -1,0 +1,191 @@
+.recipe-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--light);
+  border: 1px solid var(--lightgray);
+  border-radius: 8px;
+}
+
+.servings-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.servings-btn {
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid var(--lightgray);
+  background: var(--light);
+  color: var(--dark);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--lightgray);
+  }
+}
+
+#servings-display {
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+.recipe-time-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.recipe-time-chip {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  background: var(--lightgray);
+  border-radius: 20px;
+
+  .time-label {
+    font-weight: 600;
+    margin-right: 0.2rem;
+  }
+}
+
+.recipe-source {
+  font-size: 0.85rem;
+  margin-left: auto;
+  color: var(--secondary);
+}
+
+.cookware-list,
+.ing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.ing-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--lightgray);
+  gap: 1rem;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.ingredient_modifiers {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--gray);
+  letter-spacing: 0.05em;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+
+  &.recipe-badge {
+    color: var(--secondary);
+  }
+}
+
+.ing-qty {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  white-space: nowrap;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.unit {
+  color: var(--gray);
+  font-size: 0.9em;
+}
+
+.ing-prep {
+  font-style: italic;
+  color: var(--gray);
+  font-size: 0.9em;
+}
+
+.cookware-list li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--lightgray);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.cw-qty {
+  color: var(--gray);
+  font-size: 0.9em;
+  margin-left: 0.25rem;
+}
+
+.step-block {
+  margin: 0 0 0.6rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--light);
+  border-left: 3px solid var(--lightgray);
+  border-radius: 0 4px 4px 0;
+
+  p {
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  &.text-step {
+    border-left-color: transparent;
+    background: transparent;
+    padding-left: 0;
+  }
+}
+
+.step-num {
+  font-weight: 700;
+  margin-right: 0.35rem;
+  color: var(--secondary);
+}
+
+.ingredient_ref {
+  color: var(--secondary);
+  font-weight: 500;
+}
+
+.cookware_ref {
+  color: var(--tertiary);
+  font-style: italic;
+}
+
+.timer_ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-weight: 500;
+  color: var(--dark);
+  background: var(--lightgray);
+  padding: 0.05rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.cooklang-temperature {
+  font-weight: 500;
+}
+
+.recipe-link {
+  font-weight: 500;
+}

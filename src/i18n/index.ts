@@ -1,9 +1,18 @@
-import enUS from "./locales/en-US";
+import enUS from "./locales/en-US"
+import fr from "./locales/fr"
 
-const locales: Record<string, typeof enUS> = {
+type Locale = typeof enUS
+
+const locales: Record<string, Locale> = {
   "en-US": enUS,
-};
-
-export function i18n(locale: string) {
-  return locales[locale] || enUS;
+  en: enUS,
+  "fr-FR": fr,
+  fr: fr,
 }
+
+export function i18n(locale?: string): Locale {
+  if (!locale) return enUS
+  return locales[locale] ?? locales[locale.split("-")[0]] ?? enUS
+}
+
+export type { Locale }

@@ -1,103 +1,63 @@
-import type { PluggableList, Plugin } from "unified";
-import type { Root as MdastRoot } from "mdast";
-import type { Root as HastRoot, Element } from "hast";
-import type { VFile } from "vfile";
-import remarkGfm from "remark-gfm";
-import rehypeSlug from "rehype-slug";
-import { findAndReplace } from "mdast-util-find-and-replace";
-import { visit } from "unist-util-visit";
-import type { QuartzTransformerPlugin, BuildCtx } from "@quartz-community/types";
-import type { ExampleTransformerOptions } from "./types";
+import type { PluggableList, Plugin } from "unified"
+import type { Root as MdastRoot } from "mdast"
+import type { Root as HastRoot } from "hast"
+import type { VFile } from "vfile"
+import type { QuartzTransformerPlugin, BuildCtx } from "@quartz-community/types"
+import type { CooklangTransformerOptions } from "./types"
+import { parseCooklang } from "./parser"
+import { buildRecipeHTML } from "./renderer"
+import recipeStyle from "./components/styles/recipe.scss"
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore – .inline.ts imports are resolved to strings by tsup
+import recipeScript from "./components/scripts/recipe.inline.ts"
 
-const defaultOptions: ExampleTransformerOptions = {
-  highlightToken: "==",
-  headingClass: "example-plugin-heading",
-  enableGfm: true,
-  addHeadingSlugs: true,
-};
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const remarkHighlightToken = (token: string): Plugin<[], MdastRoot> => {
-  const escapedToken = escapeRegExp(token);
-  const pattern = new RegExp(`${escapedToken}([^\n]+?)${escapedToken}`, "g");
-  return () => (tree: MdastRoot, _file: VFile) => {
-    findAndReplace(tree, [
-      [
-        pattern,
-        (_match: string, value: string) => ({
-          type: "strong",
-          children: [{ type: "text", value }],
-        }),
-      ],
-    ]);
-  };
-};
-
-const rehypeHeadingClass = (className: string): Plugin<[], HastRoot> => {
-  return () => (tree: HastRoot, _file: VFile) => {
-    visit(tree, "element", (node: Element) => {
-      if (!/^h[1-6]$/.test(node.tagName)) {
-        return;
-      }
-
-      const existing = node.properties?.className;
-      const classes: string[] = Array.isArray(existing)
-        ? existing.filter((value): value is string => typeof value === "string")
-        : typeof existing === "string"
-          ? [existing]
-          : [];
-      node.properties = {
-        ...node.properties,
-        className: [...classes, className],
-      };
-    });
-  };
-};
-
-/**
- * Example transformer showing remark/rehype usage and resource injection.
- */
-export const ExampleTransformer: QuartzTransformerPlugin<Partial<ExampleTransformerOptions>> = (
-  userOptions?: Partial<ExampleTransformerOptions>,
+export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransformerOptions>> = (
+  _opts?: Partial<CooklangTransformerOptions>,
 ) => {
-  const options = { ...defaultOptions, ...userOptions };
   return {
-    name: "ExampleTransformer",
-    textTransform(_ctx: BuildCtx, src: string) {
-      return src.endsWith("\n") ? src : `${src}\n`;
-    },
-    markdownPlugins(): PluggableList {
-      const plugins: PluggableList = [remarkHighlightToken(options.highlightToken)];
-      if (options.enableGfm) {
-        plugins.unshift(remarkGfm);
+    name: "CooklangTransformer",
+
+    markdownPlugins(_ctx: BuildCtx): PluggableList {
+      const cooklangRemark: Plugin<[], MdastRoot> = () => (tree: MdastRoot, file: VFile) => {
+        const fm = (file.data?.frontmatter ?? {}) as Record<string, unknown>
+        if (fm["format"] !== "cooklang") return
+
+        // Strip frontmatter from raw source, then parse CookLang
+        const raw = String(file.value).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
+        file.data.cooklang = parseCooklang(raw)
+
+        // Clear the Markdown AST — the rehype plugin owns all output for this file
+        tree.children = []
       }
-      return plugins;
+      return [cooklangRemark]
     },
-    htmlPlugins(): PluggableList {
-      const plugins: PluggableList = [rehypeHeadingClass(options.headingClass)];
-      if (options.addHeadingSlugs) {
-        plugins.unshift(rehypeSlug);
+
+    htmlPlugins(ctx: BuildCtx): PluggableList {
+      const cooklangRehype: Plugin<[], HastRoot> = () => (tree: HastRoot, file: VFile) => {
+        if (!file.data?.cooklang) return
+
+        const fm = (file.data?.frontmatter ?? {}) as Record<string, unknown>
+        const locale = (fm["locale"] as string | undefined) ?? "en"
+        const slugs = ctx.allSlugs as unknown as string[]
+
+        const html = buildRecipeHTML(file.data.cooklang, fm, locale, slugs)
+
+        ;(tree as unknown as { children: unknown[] }).children = [{ type: "raw", value: html }]
       }
-      return plugins;
+      return [cooklangRehype]
     },
+
     externalResources() {
       return {
-        css: [
-          {
-            content: `.${options.headingClass} { letter-spacing: 0.02em; }`,
-            inline: true,
-          },
-        ],
+        css: [{ content: recipeStyle as string, inline: true }],
         js: [
           {
             contentType: "inline",
             loadTime: "afterDOMReady",
-            script: "document.documentElement.dataset.exampleTransformer = 'true'",
+            script: recipeScript as string,
           },
         ],
-        additionalHead: [],
-      };
+      }
     },
-  };
-};
+  }
+}

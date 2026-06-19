@@ -92,3 +92,287 @@ Use `vitest`. Mock the `BuildCtx` and `ProcessedContent` when testing transforme
 - **.inline.ts**: Files ending in `.inline.ts` are bundled as raw strings for client-side injection.
 - **.scss**: Styles are compiled to CSS strings and attached to components via `Component.css`.
 - **Branded Types**: Use `FullSlug` and `FilePath` from `@quartz-community/types` for path safety.
+
+---
+
+## CookLang Plugin — Design Specification
+
+This section documents all decisions made for the CookLang plugin implementation. It is authoritative — do not deviate without updating this document.
+
+### Consumer Site
+
+**Repo**: `jeromepin/recettes.jeromepin.fr` (branch `v5`)
+**Content root**: `content/` — subdirectories by category (`desserts/`, `plats/`, `plats-uniques/`, `accompagnements/`, `apéritifs/`, `entrées/`, `autres/`, `techniques/`, `petits-dejeuners/`)
+**All recipe files**: `.md` with YAML frontmatter
+
+### File Detection
+
+Trigger on `frontmatter.format === 'cooklang'`. Do NOT use file extension (`.cook`). Files are `.md`.
+
+No `.cook` support needed at this time.
+
+### Recipe Frontmatter Fields
+
+All known keys used in the consumer site:
+
+```yaml
+format: cooklang        # required — triggers this plugin
+title: string           # recipe title
+servings: number        # base serving count
+servings_label: string  # optional unit label (e.g. "madeleines")
+prep time: string       # e.g. "150 minutes"
+cook time: string       # e.g. "12 minutes"
+time required: string   # e.g. "162 minutes"
+tags: string | string[] # single string or list
+locale: string          # e.g. "fr" — drives i18n labels
+source: string          # URL to original recipe
+draft: boolean          # draft flag
+```
+
+### Plugin Type
+
+**Transformer only.** No PageType, no Filter, no Emitter.
+
+Quartz standard chrome (breadcrumbs, `<h1>` title, date, reading time, tags) is preserved — not suppressed. This is intentional for simplicity. A future PageType variant could suppress reading time and date, but that is out of scope.
+
+### Architecture
+
+```
+markdownPlugins(ctx) → remark plugin:
+  - Check file.data.frontmatter?.format === 'cooklang'
+  - Strip frontmatter from file.value with /^---\n[\s\S]*?\n---\n?/
+  - Parse CookLang source → CooklangRecipe struct
+  - Store in file.data.cooklang
+  - Clear mdast: tree.children = []
+
+htmlPlugins(ctx) → rehype plugin:
+  - Check file.data.cooklang
+  - Build full recipe HAST from parsed data
+  - Resolve [[wiki-links]] using ctx.allSlugs
+  - Replace tree.children with recipe nodes
+
+externalResources() → inject:
+  - Recipe CSS (inline)
+  - Servings scaling JS (afterDOMReady, inline)
+```
+
+The remark plugin runs after Quartz's FrontMatter transformer, so `file.data.frontmatter` is already populated. The htmlPlugins closure captures `ctx` for slug resolution.
+
+### Page Layout (top to bottom)
+
+1. **Metadata row**: servings control (− N +) + time chips (prep / cook / total) + source link
+2. **Cookware list**: `<h2>` + `<ul>` — rendered only if ≥1 cookware item found across all sections
+3. **Ingredients section**: `<h2>` + per section: `<h3>` + `<ul class="ing-list">`
+4. **Instructions section**: `<h2>` + pre-section steps (if any) + per section: `<h3>` + numbered step blocks
+
+No two-column layout. Single column. The left sidebar already lists recipes — no need for an ingredient sidebar.
+
+### CookLang Syntax Parsed
+
+Standard spec:
+- `@ingredient{qty%unit}` — ingredient with quantity and unit
+- `@ingredient{}` — ingredient, no quantity
+- `@singleword` — ingredient, single word, no braces needed
+- `#cookware{}` — cookware item
+- `~name{qty%unit}` — named timer
+- `~{qty%unit}` — anonymous timer
+- `== Section Name ==` — section header (leading/trailing `=` count flexible)
+- `--` — inline comment to end of line; strips that portion, breaks paragraph continuity
+- `[- block comment -]` — block comment
+- `[[target]]` or `[[target|display]]` — Quartz wiki-link (pass through to link resolver)
+- `**bold**`, `*italic*`, `` `code` ``, etc. — inline Markdown (fully rendered)
+
+Paragraph (blank-line separated block) = one step. Lines within a paragraph are joined with `<br/>` (not collapsed to space).
+
+### Extensions Implemented
+
+All cooklang-rs extensions except "Source Name with URL metadata". In detail:
+
+**Modifiers** (prefix on `@`):
+- `@?ingredient{}` — optional; shown with "OPT" badge in ingredient list
+- `@-ingredient{}` — hidden; NOT in ingredient list, still shown inline in steps
+- `@&ingredient{}` — reference to prior ingredient; NOT added to ingredient list again
+- `@+ingredient{}` — force new entry even if same name exists in current section
+- `@@recipe{}` — link to another recipe; shown with "RECIPE" badge in ingredient list AND as a styled link in steps
+
+**Alias**: `@white wine|wine{}` — `wine` shown in rendering, `white wine` tracked internally
+
+**Intermediate preparations**: `@&(~1)thing{}` etc. — back-reference selectors. Treated as `@&` modifier for list purposes; selector is informational only in rendered output.
+
+**Advanced units**: space as separator (`@water{1 L}`), range values `@eggs{2-4}` or `@sauce{200-300%ml}`
+
+**Range quantity scaling**: scale from the low end. `{2-4}` at base 4 → at 8 shows `4-8`. Store both ends in `data-base-low` and `data-base-high`. Display as `N-M`.
+
+**Modes** (parsing directives, applied to subsequent steps until changed):
+- `[mode: all]` / `[mode: default]` — standard
+- `[mode: ingredients]` — only component definitions; text omitted
+- `[mode: steps]` — all ingredients treated as references unless `@+`
+- `[mode: text]` — all steps become plain text (no component parsing)
+
+**Duplicate handling**:
+- `[duplicate: new]` / `[duplicate: default]` — same-name creates new entries
+- `[duplicate: reference]` / `[duplicate: ref]` — same-name auto-refs prior definition
+
+**Temperature**: `180 ºC`, `350 °F` in prose → `<span class="cooklang-temperature">180 ºC</span>`. No unit conversion.
+
+**Timers require time units**: bare `~name` without `{}` is invalid.
+
+### Ingredient List Rules
+
+- Ingredients are listed **per section** — same ingredient in two sections = two entries.
+- `@-hidden` modifier → not listed.
+- `@&reference` modifier → not listed (already listed from prior occurrence).
+- `@@recipe` modifier → listed with a RECIPE badge.
+- `@?optional` modifier → listed with an OPT badge.
+- Cookware does NOT appear in the ingredient list.
+
+### Servings Scaling
+
+- Scaling is **client-side JS** only (no SSR).
+- Base value stored in `data-base` attribute on `<span class="scalable-value">`.
+- Range values: `data-base-low` and `data-base-high` on `<span class="scalable-range">`.
+- Minimum servings: **1** (cannot decrement below 1).
+- Rounding: **smart** — integers stay integers; decimals rounded to 1 decimal place.
+  - `Math.round(x * 10) / 10`, then check `Number.isInteger(result)`.
+- Servings display: `<span id="servings-display" data-base="N">N</span>`.
+- Buttons: `<button class="servings-btn" data-delta="-1">−</button>` / `data-delta="1"`.
+- JS must use `document.addEventListener('nav', ...)` and `window.addCleanup()` for Quartz SPA navigation.
+
+### Wiki-Link Resolution
+
+Use `ctx.allSlugs` (available in the `htmlPlugins` closure via `BuildCtx`):
+
+1. Strip leading `./` or `/` from target.
+2. Exact match (case-insensitive) against allSlugs.
+3. Filename-only match (last path segment).
+4. Fallback: use target as-is.
+
+Output: `<a href="/resolved/slug" class="internal">display text</a>`
+
+`[[target]]` — display = last path segment of target (title-cased or as-is).
+`[[target|display]]` — use explicit display text.
+
+### Inline Markdown in Steps
+
+Step text tokens of type `text` may contain inline Markdown. Render:
+- `**bold**` → `<strong>`
+- `*italic*` or `_italic_` → `<em>`
+- `` `code` `` → `<code>`
+- `~~strike~~` → `<del>`
+- Line breaks within the step (from `\n` in the paragraph source) → `<br/>`
+
+### i18n Labels
+
+Section headings and UI strings are locale-aware via `frontmatter.locale`.
+
+| Key | `fr` | `en` (default) |
+|-----|------|----------------|
+| Ingredients section heading | Ingrédients | Ingredients |
+| Instructions section heading | Instructions | Instructions |
+| Cookware section heading | Ustensiles | Equipment |
+| Servings label | Portions | Servings |
+| Optional badge | OPT | OPT |
+| Recipe badge | RECETTE | RECIPE |
+| Source link label | Source | Source |
+| Prep time label | Préparation | Prep |
+| Cook time label | Cuisson | Cook |
+| Total time label | Total | Total |
+
+Add new locales in `src/i18n.ts` as a plain lookup map keyed by locale string.
+
+### CSS Class Reference
+
+| Class | Element | Purpose |
+|-------|---------|---------|
+| `.recipe-meta` | div | Metadata row wrapper |
+| `.servings-control` | div | Servings ± widget |
+| `.servings-btn` | button | Increment/decrement button |
+| `.recipe-time-chips` | div | Time badges row |
+| `.recipe-time-chip` | span | Individual time badge |
+| `.recipe-source` | a | Source link |
+| `.ing-list` | ul | Ingredient list |
+| `.ing-list li` | li | Ingredient row |
+| `.ingredient_modifiers` | span | OPT / RECIPE badge |
+| `.scalable-value` | span | Scalable numeric quantity |
+| `.scalable-range` | span | Scalable range quantity |
+| `.unit` | span | Unit label |
+| `.ingredient_ref` | span | Ingredient reference in step text |
+| `.cookware_ref` | span | Cookware reference in step text |
+| `.timer_ref` | span | Timer reference in step text |
+| `.cooklang-temperature` | span | Temperature value in step text |
+| `.step-block` | div | Step wrapper |
+| `.step-num` | span | Step number (e.g. "1.") |
+| `.recipe-link` | a | @@recipe link in steps |
+
+### Data Structures
+
+```ts
+// Ingredient quantity: scalar, range, or none
+type Quantity =
+  | { kind: 'scalar'; value: string }
+  | { kind: 'range'; low: string; high: string }
+  | { kind: 'none' }
+
+type IngredientModifier = 'optional' | 'hidden' | 'reference' | 'new' | 'recipe' | null
+
+interface ParsedIngredient {
+  name: string
+  alias: string | null
+  quantity: Quantity
+  unit: string | null
+  modifier: IngredientModifier
+  preparation: string | null  // text in (parens) after the ingredient
+}
+
+interface ParsedCookware {
+  name: string
+  quantity: string | null
+}
+
+interface ParsedTimer {
+  name: string | null
+  quantity: string
+  unit: string
+}
+
+type StepToken =
+  | { type: 'text'; value: string }
+  | { type: 'ingredient'; ingredient: ParsedIngredient }
+  | { type: 'cookware'; cookware: ParsedCookware }
+  | { type: 'timer'; timer: ParsedTimer }
+  | { type: 'wiki-link'; target: string; display: string | null }
+  | { type: 'temperature'; raw: string }
+
+interface ParsedStep {
+  tokens: StepToken[]
+  isText: boolean  // true when [mode: text] is active
+}
+
+interface ParsedSection {
+  name: string | null  // null = pre-amble (before first == section ==)
+  steps: ParsedStep[]
+}
+
+interface CooklangRecipe {
+  sections: ParsedSection[]
+  // Derived by the renderer — not stored in the parse result:
+  // ingredients and cookware are extracted from steps during rendering
+}
+
+// vfile augmentation
+declare module 'vfile' {
+  interface DataMap {
+    cooklang: CooklangRecipe
+  }
+}
+```
+
+### Known Quirks in Consumer Content
+
+- `@concombres (noha - moyen){1}` — preparation note with parentheses and `-` inside. Parse the `(...)` after the ingredient name but before `{}` as a preparation note.
+- `@crème liquide 30%+{130%g}` — ingredient name contains `%` and `+`. The `%` inside `{}` is the qty/unit separator; the `%+` in the name is literal text.
+- `[[desserts/Crème pâtissière]]` — accented characters in wiki-link targets. Normalize carefully for slug matching.
+- `-- Pour la crème pâtissière` on its own line — CookLang comment; strips to end of line and does NOT create a new paragraph break (blank line does that).
+- Pre-section paragraphs (before any `==` section): treated as steps in a `null`-named section. Numbered from 1.
+- Step numbers restart at 1 for each section.
+- `**12h plus tard**` — Markdown bold within a step. Must be rendered as `<strong>`.
