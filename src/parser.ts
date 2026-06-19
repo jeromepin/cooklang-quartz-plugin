@@ -31,14 +31,14 @@ function stripInlineComment(line: string): string {
 
 function parseModeDirective(line: string): ParseMode | null {
   const m = line.trim().match(/^\[mode:\s*(all|default|ingredients|steps|text)\s*\]$/i)
-  if (!m) return null
+  if (!m?.[1]) return null
   const v = m[1].toLowerCase()
   return v === "all" ? "default" : (v as ParseMode)
 }
 
 function parseDuplicateDirective(line: string): DuplicateMode | null {
   const m = line.trim().match(/^\[duplicate:\s*(new|default|reference|ref)\s*\]$/i)
-  if (!m) return null
+  if (!m?.[1]) return null
   const v = m[1].toLowerCase()
   return v === "ref" || v === "reference" ? "reference" : "new"
 }
@@ -70,7 +70,7 @@ function parseQuantity(content: string): { quantity: Quantity; unit: string | nu
 
   // Advanced units extension: space separator "1 L"
   const spaceMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s+(\S+)$/)
-  if (spaceMatch) {
+  if (spaceMatch?.[1] && spaceMatch[2]) {
     return { quantity: { kind: "scalar", value: spaceMatch[1] }, unit: spaceMatch[2] }
   }
 
@@ -105,7 +105,7 @@ function extractNameParts(raw: string): {
 
   // Preparation note: "concombres (noha - moyen)"
   const prepMatch = name.match(/^(.*?)\s*\(([^)]*)\)\s*$/)
-  if (prepMatch) {
+  if (prepMatch?.[1] != null && prepMatch[2] != null) {
     name = prepMatch[1].trim()
     preparation = prepMatch[2].trim() || null
   }
@@ -317,7 +317,7 @@ function tokenizeLine(src: string, mode: ParseMode): StepToken[] {
     // Timer ~
     if (ch === "~") {
       // Only parse as timer if not mid-word and has braces ahead
-      const prevCh = pos > 0 ? src[pos - 1] : " "
+      const prevCh = pos > 0 ? (src[pos - 1] ?? " ") : " "
       const isMidWord = /[a-zA-ZÀ-ÿ0-9_]/.test(prevCh)
       const braceIdx = findBrace(pos + 1)
 
@@ -367,7 +367,8 @@ function tokenizeParagraph(lines: string[], mode: ParseMode): StepToken[] {
   const all: StepToken[] = []
   for (let i = 0; i < lines.length; i++) {
     if (i > 0) all.push({ type: "text", value: "\n" })
-    all.push(...tokenizeLine(lines[i], mode))
+    const line = lines[i]
+    if (line != null) all.push(...tokenizeLine(line, mode))
   }
   return all
 }
@@ -394,7 +395,7 @@ export function parseCooklang(rawSrc: string): CooklangRecipe {
       if (!tokens.some((t) => t.type === "ingredient")) return
     }
 
-    sections[sections.length - 1].steps.push({ tokens, isText: isTextMode })
+    sections.at(-1)!.steps.push({ tokens, isText: isTextMode })
   }
 
   for (const rawLine of rawLines) {
@@ -438,7 +439,7 @@ export function parseCooklang(rawSrc: string): CooklangRecipe {
   flushParagraph()
 
   // Drop empty pre-amble section when sections follow
-  if (sections[0].name === null && sections[0].steps.length === 0 && sections.length > 1) {
+  if (sections[0]?.name === null && sections[0].steps.length === 0 && sections.length > 1) {
     sections.shift()
   }
 

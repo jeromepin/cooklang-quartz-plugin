@@ -1,4 +1,4 @@
-export { CooklangTransformer } from "./transformer"
+export { CooklangTransformer, CooklangTransformer as transformer } from "./transformer"
 export { parseCooklang } from "./parser"
 
 export type {

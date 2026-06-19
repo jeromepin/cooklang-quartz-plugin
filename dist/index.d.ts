@@ -1,21 +1,10 @@
-import { QuartzTransformerPlugin, QuartzFilterPlugin, QuartzEmitterPlugin } from '@quartz-community/types';
-export { PageGenerator, PageMatcher, QuartzComponent, QuartzComponentConstructor, QuartzComponentProps, QuartzEmitterPlugin, QuartzFilterPlugin, QuartzPageTypePlugin, QuartzPageTypePluginInstance, QuartzTransformerPlugin, StringResource, VirtualPage } from '@quartz-community/types';
-import { ExampleTransformerOptions, ExampleFilterOptions, ExampleEmitterOptions } from './types.js';
-export { ExampleComponent, ExampleComponentOptions } from './components/index.js';
+import { QuartzTransformerPlugin } from '@quartz-community/types';
+export { BuildCtx, QuartzTransformerPlugin, QuartzTransformerPluginInstance, StaticResources } from '@quartz-community/types';
+import { CooklangTransformerOptions, CooklangRecipe } from './types.js';
+export { DuplicateMode, IngredientModifier, ParseMode, ParsedCookware, ParsedIngredient, ParsedSection, ParsedStep, ParsedTimer, Quantity, StepToken } from './types.js';
 
-/**
- * Example transformer showing remark/rehype usage and resource injection.
- */
-declare const ExampleTransformer: QuartzTransformerPlugin<Partial<ExampleTransformerOptions>>;
+declare const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransformerOptions>>;
 
-/**
- * Example filter that removes drafts, tagged pages, and excluded path prefixes.
- */
-declare const ExampleFilter: QuartzFilterPlugin<Partial<ExampleFilterOptions>>;
+declare function parseCooklang(rawSrc: string): CooklangRecipe;
 
-/**
- * Example emitter that writes a JSON manifest of content metadata.
- */
-declare const ExampleEmitter: QuartzEmitterPlugin<Partial<ExampleEmitterOptions>>;
-
-export { ExampleEmitter, ExampleEmitterOptions, ExampleFilter, ExampleFilterOptions, ExampleTransformer, ExampleTransformerOptions };
+export { CooklangRecipe, CooklangTransformer, CooklangTransformerOptions, parseCooklang, CooklangTransformer as transformer };
