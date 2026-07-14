@@ -1,10 +1,10 @@
 import { QuartzTransformerPlugin } from '@quartz-community/types';
 export { BuildCtx, QuartzTransformerPlugin, QuartzTransformerPluginInstance, StaticResources } from '@quartz-community/types';
-import { CooklangTransformerOptions, CooklangRecipe } from './types.js';
-export { DuplicateMode, IngredientModifier, ParseMode, ParsedCookware, ParsedIngredient, ParsedSection, ParsedStep, ParsedTimer, Quantity, StepToken } from './types.js';
+import { CooklangTransformerOptions } from './types.js';
+export { CooklangCookwareNode, CooklangIngredientNode, CooklangRecipe, CooklangTemperatureNode, CooklangTimerNode, DuplicateMode, IngredientModifier, ParseMode, ParsedCookware, ParsedIngredient, ParsedSection, ParsedTimer, Quantity, SectionBlock } from './types.js';
+import 'unist';
+import 'mdast';
 
 declare const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransformerOptions>>;
 
-declare function parseCooklang(rawSrc: string): CooklangRecipe;
-
-export { CooklangRecipe, CooklangTransformer, CooklangTransformerOptions, parseCooklang, CooklangTransformer as transformer };
+export { CooklangTransformer, CooklangTransformerOptions, CooklangTransformer as transformer };

@@ -63,6 +63,36 @@ export default {
 };
 ```
 
+## CookLang Recipes
+
+`CooklangTransformer` renders `.md` files whose frontmatter has `format: cooklang` as recipe
+pages: a servings-scalable metadata row, a deduplicated cookware list, and per-section
+ingredient lists and numbered instructions, extracted from `@ingredient{qty%unit}`,
+`#cookware{}`, `~timer{qty%unit}`, and `== Section ==` syntax.
+
+Everything else in the file is parsed as regular Markdown — GFM (tables, footnotes, task
+lists) and Obsidian-flavored syntax (wiki-links, embeds, callouts, highlights) all work
+inside step text, ingredient names, and prep notes, exactly as on any other note.
+
+**Setup requirement:** register `CooklangTransformer` *after* `GitHubFlavoredMarkdown` and
+`ObsidianFlavoredMarkdown` in `quartz.config.ts`, since it reads the mdast tree those
+transformers have already produced rather than parsing raw Markdown itself:
+
+```ts
+import { CooklangTransformer } from "@quartz-community/cooklang";
+
+transformers: [
+  Plugin.FrontMatter(),
+  Plugin.ObsidianFlavoredMarkdown({ enableInHtmlEmbed: false }),
+  Plugin.GitHubFlavoredMarkdown(),
+  CooklangTransformer(),
+  // ...
+];
+```
+
+See `AGENTS.md`'s "CookLang Plugin — Design Specification" section for the full syntax
+reference, data model, and known content quirks.
+
 ## Plugin factory pattern (Astro-style)
 
 Quartz plugins are factory functions that return an object with a `name` and hook implementations.

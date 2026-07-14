@@ -1,19 +1,21 @@
 export { CooklangTransformer, CooklangTransformer as transformer } from "./transformer"
-export { parseCooklang } from "./parser"
 
 export type {
+  CooklangCookwareNode,
+  CooklangIngredientNode,
   CooklangRecipe,
+  CooklangTemperatureNode,
+  CooklangTimerNode,
   CooklangTransformerOptions,
   DuplicateMode,
   IngredientModifier,
   ParsedCookware,
   ParsedIngredient,
   ParsedSection,
-  ParsedStep,
   ParsedTimer,
   ParseMode,
   Quantity,
-  StepToken,
+  SectionBlock,
 } from "./types"
 
 // Re-export Quartz plugin types for convenience

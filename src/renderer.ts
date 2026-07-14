@@ -1,13 +1,20 @@
-import type { CooklangRecipe, ParsedIngredient, ParsedSection, StepToken } from "./types"
+import { h } from "hastscript"
+import { toHast } from "mdast-util-to-hast"
+import type { Handlers } from "mdast-util-to-hast"
+import { visit } from "unist-util-visit"
+import type { Element, ElementContent, Nodes as HastNodes } from "hast"
+import type {
+  CooklangCookwareNode,
+  CooklangIngredientNode,
+  CooklangRecipe,
+  CooklangTemperatureNode,
+  CooklangTimerNode,
+  ParsedCookware,
+  ParsedIngredient,
+  ParsedSection,
+  SectionBlock,
+} from "./types"
 import { i18n } from "./i18n/index"
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-}
 
 function slugify(text: string): string {
   return text
@@ -20,124 +27,126 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "")
 }
 
-function renderInlineText(text: string): string {
-  let result = escapeHtml(text)
-  result = result
-    .replace(/~~([\s\S]+?)~~/g, "<del>$1</del>")
-    .replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*\n]+?)\*/g, "<em>$1</em>")
-    .replace(/_([^_\n]+?)_/g, "<em>$1</em>")
-    .replace(/`([^`]+?)`/g, "<code>$1</code>")
-    .replace(/\n/g, "<br/>")
-  return result
+const cooklangHandlers: Handlers = {
+  cooklangIngredient(_state, node: CooklangIngredientNode) {
+    return h("span", { class: "ingredient_ref" }, node.ingredient.alias ?? node.ingredient.name)
+  },
+  cooklangCookware(_state, node: CooklangCookwareNode) {
+    return h("span", { class: "cookware_ref" }, node.cookware.name)
+  },
+  cooklangTimer(_state, node: CooklangTimerNode) {
+    return h("span", { class: "timer_ref" }, `⏱ ${node.timer.quantity} ${node.timer.unit}`)
+  },
+  cooklangTemperature(_state, node: CooklangTemperatureNode) {
+    return h("span", { class: "cooklang-temperature" }, node.raw)
+  },
 }
 
-function resolveWikiLink(target: string, allSlugs: readonly string[]): string {
-  const normalized = target.replace(/^\.?\//, "").trim()
-  const lower = normalized.toLowerCase()
-
-  const exact = allSlugs.find((s) => s.toLowerCase() === lower)
-  if (exact) return `/${exact}`
-
-  const targetFile = lower.split("/").pop() ?? lower
-  const byFile = allSlugs.find((s) => {
-    const parts = s.toLowerCase().split("/")
-    return parts[parts.length - 1] === targetFile
-  })
-  if (byFile) return `/${byFile}`
-
-  return `/${normalized}`
+function convertBlockChildren(block: SectionBlock): ElementContent[] {
+  const converted = toHast(block.mdastNode, { handlers: cooklangHandlers }) as HastNodes
+  if (converted.type === "root") return converted.children as ElementContent[]
+  return [converted as ElementContent]
 }
 
-function wikiLinkDisplay(target: string): string {
-  const parts = target.split("/")
-  return (parts[parts.length - 1] ?? target).replace(/-/g, " ")
-}
+function renderBlock(block: SectionBlock, stepNum: number | null): Element {
+  const children = convertBlockChildren(block)
 
-function renderTokens(tokens: StepToken[], allSlugs: readonly string[]): string {
-  return tokens
-    .map((tok) => {
-      switch (tok.type) {
-        case "text":
-          return renderInlineText(tok.value)
-
-        case "ingredient": {
-          const display = escapeHtml(tok.ingredient.alias ?? tok.ingredient.name)
-          return `<span class="ingredient_ref">${display}</span>`
-        }
-
-        case "cookware":
-          return `<span class="cookware_ref">${escapeHtml(tok.cookware.name)}</span>`
-
-        case "timer":
-          return `<span class="timer_ref">⏱ ${escapeHtml(tok.timer.quantity)} ${escapeHtml(tok.timer.unit)}</span>`
-
-        case "wiki-link": {
-          const href = resolveWikiLink(tok.target, allSlugs)
-          const display = escapeHtml(tok.display ?? wikiLinkDisplay(tok.target))
-          return `<a href="${escapeHtml(href)}" class="internal">${display}</a>`
-        }
-
-        case "temperature":
-          return `<span class="cooklang-temperature">${escapeHtml(tok.raw)}</span>`
-
-        default:
-          return ""
-      }
-    })
-    .join("")
-}
-
-function renderIngredientList(section: ParsedSection, labels: ReturnType<typeof i18n>["components"]["recipe"]): string {
-  const ingredients: ParsedIngredient[] = []
-
-  for (const step of section.steps) {
-    for (const tok of step.tokens) {
-      if (tok.type !== "ingredient") continue
-      const { modifier } = tok.ingredient
-      if (modifier === "hidden" || modifier === "reference") continue
-      ingredients.push(tok.ingredient)
+  if (stepNum !== null) {
+    const first = children[0]
+    if (first && first.type === "element") {
+      first.children = [h("span", { class: "step-num" }, `${stepNum}.`), { type: "text", value: " " }, ...first.children]
     }
+    return h("div", { class: "step-block" }, children)
   }
 
-  if (ingredients.length === 0) return ""
-
-  const items = ingredients
-    .map((ing) => {
-      const display = escapeHtml(ing.alias ?? ing.name)
-      const prepHtml = ing.preparation
-        ? ` <em class="ing-prep">(${escapeHtml(ing.preparation)})</em>`
-        : ""
-
-      let modBadge = `<span class="ingredient_modifiers"></span>`
-      if (ing.modifier === "optional") {
-        modBadge = `<span class="ingredient_modifiers">${labels.opt}</span>`
-      } else if (ing.modifier === "recipe") {
-        modBadge = `<span class="ingredient_modifiers recipe-badge">${labels.recipe}</span>`
-      }
-
-      let qtyHtml = ""
-      if (ing.quantity.kind === "scalar") {
-        const unit = ing.unit ? `<span class="unit">${escapeHtml(ing.unit)}</span>` : ""
-        qtyHtml = `<span class="ing-qty"><span class="scalable-value" data-base="${escapeHtml(ing.quantity.value)}">${escapeHtml(ing.quantity.value)}</span>${unit ? " " + unit : ""}</span>`
-      } else if (ing.quantity.kind === "range") {
-        const unit = ing.unit ? `<span class="unit">${escapeHtml(ing.unit)}</span>` : ""
-        qtyHtml = `<span class="ing-qty"><span class="scalable-range" data-base-low="${escapeHtml(ing.quantity.low)}" data-base-high="${escapeHtml(ing.quantity.high)}">${escapeHtml(ing.quantity.low)}-${escapeHtml(ing.quantity.high)}</span>${unit ? " " + unit : ""}</span>`
-      }
-
-      return `<li><span>${modBadge}<span>${display}${prepHtml}</span></span>${qtyHtml}</li>`
-    })
-    .join("\n")
-
-  return `<ul class="ing-list">\n${items}\n</ul>`
+  const className = block.mode === "text" ? "step-block text-step" : "step-block"
+  return h("div", { class: className }, children)
 }
 
-export function buildRecipeHTML(
+function renderQuantityHast(ingredient: ParsedIngredient): ElementContent | null {
+  const unitEl = ingredient.unit ? h("span", { class: "unit" }, ingredient.unit) : null
+
+  if (ingredient.quantity.kind === "scalar") {
+    const valueEl = h(
+      "span",
+      { class: "scalable-value", "data-base": ingredient.quantity.value },
+      ingredient.quantity.value,
+    )
+    return h("span", { class: "ing-qty" }, unitEl ? [valueEl, " ", unitEl] : [valueEl])
+  }
+
+  if (ingredient.quantity.kind === "range") {
+    const rangeEl = h(
+      "span",
+      {
+        class: "scalable-range",
+        "data-base-low": ingredient.quantity.low,
+        "data-base-high": ingredient.quantity.high,
+      },
+      `${ingredient.quantity.low}-${ingredient.quantity.high}`,
+    )
+    return h("span", { class: "ing-qty" }, unitEl ? [rangeEl, " ", unitEl] : [rangeEl])
+  }
+
+  return null
+}
+
+function renderIngredientLi(ingredient: ParsedIngredient, labels: ReturnType<typeof i18n>["components"]["recipe"]): Element {
+  const display = ingredient.alias ?? ingredient.name
+  const prepEl = ingredient.preparation
+    ? [" ", h("em", { class: "ing-prep" }, `(${ingredient.preparation})`)]
+    : []
+
+  let modBadge: Element
+  if (ingredient.modifier === "optional") {
+    modBadge = h("span", { class: "ingredient_modifiers" }, labels.opt)
+  } else if (ingredient.modifier === "recipe") {
+    modBadge = h("span", { class: "ingredient_modifiers recipe-badge" }, labels.recipe)
+  } else {
+    modBadge = h("span", { class: "ingredient_modifiers" })
+  }
+
+  const qtyEl = renderQuantityHast(ingredient)
+
+  return h("li", [
+    h("span", [modBadge, h("span", [display, ...prepEl])]),
+    ...(qtyEl ? [qtyEl] : []),
+  ])
+}
+
+function collectIngredients(blocks: SectionBlock[]): ParsedIngredient[] {
+  const ingredients: ParsedIngredient[] = []
+  for (const block of blocks) {
+    visit(block.mdastNode, "cooklangIngredient", (node: CooklangIngredientNode) => {
+      const { modifier } = node.ingredient
+      if (modifier === "hidden" || modifier === "reference") return
+      ingredients.push(node.ingredient)
+    })
+  }
+  return ingredients
+}
+
+function collectCookware(sections: ParsedSection[]): ParsedCookware[] {
+  const seen = new Set<string>()
+  const cookware: ParsedCookware[] = []
+  for (const section of sections) {
+    for (const block of section.blocks) {
+      visit(block.mdastNode, "cooklangCookware", (node: CooklangCookwareNode) => {
+        const key = node.cookware.name.toLowerCase()
+        if (seen.has(key)) return
+        seen.add(key)
+        cookware.push(node.cookware)
+      })
+    }
+  }
+  return cookware
+}
+
+export function buildRecipeHast(
   recipe: CooklangRecipe,
   frontmatter: Record<string, unknown>,
   locale: string,
-  allSlugs: readonly string[],
-): string {
+): ElementContent[] {
   const labels = i18n(locale).components.recipe
 
   // --- Metadata row ---
@@ -148,95 +157,87 @@ export function buildRecipeHTML(
   const source = frontmatter["source"] as string | undefined
 
   const timeChips = [
-    prepTime
-      ? `<span class="recipe-time-chip"><span class="time-label">${labels.prep}</span> ${escapeHtml(prepTime)}</span>`
-      : "",
-    cookTime
-      ? `<span class="recipe-time-chip"><span class="time-label">${labels.cook}</span> ${escapeHtml(cookTime)}</span>`
-      : "",
-    totalTime
-      ? `<span class="recipe-time-chip"><span class="time-label">${labels.total}</span> ${escapeHtml(totalTime)}</span>`
-      : "",
+    prepTime ? { label: labels.prep, value: prepTime } : null,
+    cookTime ? { label: labels.cook, value: cookTime } : null,
+    totalTime ? { label: labels.total, value: totalTime } : null,
+  ].filter((c): c is { label: string; value: string } => c !== null)
+
+  const metaChildren: ElementContent[] = [
+    h("div", { class: "servings-control" }, [
+      h("span", labels.servings),
+      h("button", { class: "servings-btn", "data-delta": "-1" }, "−"),
+      h("span", { id: "servings-display", "data-base": String(servings) }, String(servings)),
+      h("button", { class: "servings-btn", "data-delta": "1" }, "+"),
+    ]),
   ]
-    .filter(Boolean)
-    .join("\n    ")
 
-  const sourceLink = source
-    ? `<a href="${escapeHtml(source)}" class="recipe-source" target="_blank" rel="noopener noreferrer">${labels.source} ↗</a>`
-    : ""
+  if (timeChips.length > 0) {
+    metaChildren.push(
+      h(
+        "div",
+        { class: "recipe-time-chips" },
+        timeChips.map((chip) => h("span", { class: "recipe-time-chip" }, [h("span", { class: "time-label" }, chip.label), " ", chip.value])),
+      ),
+    )
+  }
 
-  const metaHTML = `<div class="recipe-meta">
-  <div class="servings-control">
-    <span>${escapeHtml(labels.servings)}</span>
-    <button class="servings-btn" data-delta="-1">−</button>
-    <span id="servings-display" data-base="${servings}">${servings}</span>
-    <button class="servings-btn" data-delta="1">+</button>
-  </div>
-  ${timeChips ? `<div class="recipe-time-chips">\n    ${timeChips}\n  </div>` : ""}
-  ${sourceLink}
-</div>`
+  if (source) {
+    metaChildren.push(
+      h("a", { href: source, class: "recipe-source", target: "_blank", rel: "noopener noreferrer" }, `${labels.source} ↗`),
+    )
+  }
+
+  const metaHast = h("div", { class: "recipe-meta" }, metaChildren)
 
   // --- Cookware list (deduplicated globally) ---
-  const seenCookware = new Set<string>()
-  const allCookware: Array<{ name: string; quantity: string | null }> = []
-  for (const section of recipe.sections) {
-    for (const step of section.steps) {
-      for (const tok of step.tokens) {
-        if (tok.type !== "cookware") continue
-        const key = tok.cookware.name.toLowerCase()
-        if (!seenCookware.has(key)) {
-          seenCookware.add(key)
-          allCookware.push(tok.cookware)
-        }
-      }
-    }
-  }
-
-  const cookwareHTML =
-    allCookware.length > 0
-      ? `<h2 id="ustensiles">${escapeHtml(labels.cookware)}</h2>
-<ul class="cookware-list">
-  ${allCookware
-    .map(
-      (c) =>
-        `<li>${escapeHtml(c.name)}${c.quantity ? ` <span class="cw-qty">${escapeHtml(c.quantity)}</span>` : ""}</li>`,
+  const allCookware = collectCookware(recipe.sections)
+  const cookwareNodes: ElementContent[] = []
+  if (allCookware.length > 0) {
+    cookwareNodes.push(h("h2", { id: "ustensiles" }, labels.cookware))
+    cookwareNodes.push(
+      h(
+        "ul",
+        { class: "cookware-list" },
+        allCookware.map((c) =>
+          h("li", c.quantity ? [c.name, " ", h("span", { class: "cw-qty" }, c.quantity)] : [c.name]),
+        ),
+      ),
     )
-    .join("\n  ")}
-</ul>`
-      : ""
+  }
 
   // --- Ingredients section ---
-  let ingredientsHTML = `<h2 id="ingredients">${escapeHtml(labels.ingredients)}</h2>\n`
+  const ingredientsNodes: ElementContent[] = []
   let hasAnyIngredients = false
   for (const section of recipe.sections) {
-    const listHTML = renderIngredientList(section, labels)
-    if (!listHTML) continue
+    const ingredients = collectIngredients(section.blocks)
+    if (ingredients.length === 0) continue
     hasAnyIngredients = true
     if (section.name) {
-      ingredientsHTML += `<h3 id="ing-${slugify(section.name)}">${escapeHtml(section.name)}</h3>\n`
+      ingredientsNodes.push(h("h3", { id: `ing-${slugify(section.name)}` }, section.name))
     }
-    ingredientsHTML += listHTML + "\n"
+    ingredientsNodes.push(
+      h(
+        "ul",
+        { class: "ing-list" },
+        ingredients.map((ing) => renderIngredientLi(ing, labels)),
+      ),
+    )
   }
-  if (!hasAnyIngredients) ingredientsHTML = ""
+  if (hasAnyIngredients) ingredientsNodes.unshift(h("h2", { id: "ingredients" }, labels.ingredients))
 
   // --- Instructions section ---
-  let instructionsHTML = `<h2 id="instructions">${escapeHtml(labels.instructions)}</h2>\n`
+  const instructionsNodes: ElementContent[] = [h("h2", { id: "instructions" }, labels.instructions)]
   for (const section of recipe.sections) {
-    if (section.steps.length === 0) continue
+    if (section.blocks.length === 0) continue
     if (section.name) {
-      instructionsHTML += `<h3 id="inst-${slugify(section.name)}">${escapeHtml(section.name)}</h3>\n`
+      instructionsNodes.push(h("h3", { id: `inst-${slugify(section.name)}` }, section.name))
     }
     let stepNum = 1
-    for (const step of section.steps) {
-      const inner = renderTokens(step.tokens, allSlugs)
-      if (step.isText) {
-        instructionsHTML += `<div class="step-block text-step"><p>${inner}</p></div>\n`
-      } else {
-        instructionsHTML += `<div class="step-block"><p><span class="step-num">${stepNum}.</span> ${inner}</p></div>\n`
-        stepNum++
-      }
+    for (const block of section.blocks) {
+      const num = block.numbered ? stepNum++ : null
+      instructionsNodes.push(renderBlock(block, num))
     }
   }
 
-  return [metaHTML, cookwareHTML, ingredientsHTML, instructionsHTML].filter(Boolean).join("\n")
+  return [metaHast, ...cookwareNodes, ...ingredientsNodes, ...instructionsNodes]
 }

@@ -1,3 +1,6 @@
+import { Node } from 'unist';
+import { RootContent } from 'mdast';
+
 type Quantity = {
     kind: "scalar";
     value: string;
@@ -26,36 +29,47 @@ interface ParsedTimer {
     quantity: string;
     unit: string;
 }
-type StepToken = {
-    type: "text";
-    value: string;
-} | {
-    type: "ingredient";
+type ParseMode = "default" | "ingredients" | "steps" | "text";
+type DuplicateMode = "new" | "reference";
+interface CooklangIngredientNode extends Node {
+    type: "cooklangIngredient";
     ingredient: ParsedIngredient;
-} | {
-    type: "cookware";
+}
+interface CooklangCookwareNode extends Node {
+    type: "cooklangCookware";
     cookware: ParsedCookware;
-} | {
-    type: "timer";
+}
+interface CooklangTimerNode extends Node {
+    type: "cooklangTimer";
     timer: ParsedTimer;
-} | {
-    type: "wiki-link";
-    target: string;
-    display: string | null;
-} | {
-    type: "temperature";
+}
+interface CooklangTemperatureNode extends Node {
+    type: "cooklangTemperature";
     raw: string;
-};
-interface ParsedStep {
-    tokens: StepToken[];
-    isText: boolean;
+}
+declare module "mdast" {
+    interface RootContentMap {
+        cooklangIngredient: CooklangIngredientNode;
+        cooklangCookware: CooklangCookwareNode;
+        cooklangTimer: CooklangTimerNode;
+        cooklangTemperature: CooklangTemperatureNode;
+    }
+    interface PhrasingContentMap {
+        cooklangIngredient: CooklangIngredientNode;
+        cooklangCookware: CooklangCookwareNode;
+        cooklangTimer: CooklangTimerNode;
+        cooklangTemperature: CooklangTemperatureNode;
+    }
+}
+interface SectionBlock {
+    mdastNode: RootContent;
+    numbered: boolean;
+    mode: ParseMode;
 }
 interface ParsedSection {
     name: string | null;
-    steps: ParsedStep[];
+    blocks: SectionBlock[];
 }
-type ParseMode = "default" | "ingredients" | "steps" | "text";
-type DuplicateMode = "new" | "reference";
 interface CooklangRecipe {
     sections: ParsedSection[];
 }
@@ -67,4 +81,4 @@ declare module "vfile" {
 interface CooklangTransformerOptions {
 }
 
-export type { CooklangRecipe, CooklangTransformerOptions, DuplicateMode, IngredientModifier, ParseMode, ParsedCookware, ParsedIngredient, ParsedSection, ParsedStep, ParsedTimer, Quantity, StepToken };
+export type { CooklangCookwareNode, CooklangIngredientNode, CooklangRecipe, CooklangTemperatureNode, CooklangTimerNode, CooklangTransformerOptions, DuplicateMode, IngredientModifier, ParseMode, ParsedCookware, ParsedIngredient, ParsedSection, ParsedTimer, Quantity, SectionBlock };

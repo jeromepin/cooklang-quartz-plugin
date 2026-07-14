@@ -135,28 +135,83 @@ draft: boolean          # draft flag
 
 Quartz standard chrome (breadcrumbs, `<h1>` title, date, reading time, tags) is preserved — not suppressed. This is intentional for simplicity. A future PageType variant could suppress reading time and date, but that is out of scope.
 
+### Transformer Ordering Requirement (important)
+
+`CooklangTransformer` **must** be registered *after* `GitHubFlavoredMarkdown` and
+`ObsidianFlavoredMarkdown` in the consuming site's `quartz.config.ts` `transformers` array:
+
+```ts
+transformers: [
+  Plugin.FrontMatter(),
+  Plugin.ObsidianFlavoredMarkdown({ ...}),
+  Plugin.GitHubFlavoredMarkdown(),
+  CooklangTransformer(),
+  // ...
+]
+```
+
+Quartz concatenates every enabled transformer's `markdownPlugins()` output into a single
+remark pipeline run over one shared mdast tree, in array order. `CooklangTransformer` reads
+the tree GFM/Obsidian have already produced (tables, footnotes, task lists, wiki-links,
+embeds, `==highlight==`, etc.) rather than parsing raw text itself — registering it first
+would mean it never sees any of that.
+
 ### Architecture
 
+CookLang recipes are no longer parsed by a standalone hand-rolled tokenizer that bypasses
+Markdown. Instead, cooklang syntax (`@ingredient`, `#cookware`, `~timer`, `== Section ==`) is
+layered **additively** on top of a normal GFM + Obsidian Markdown parse, so recipes get full
+Markdown support (tables, footnotes, images, callouts, wiki-links/embeds, emphasis, etc.)
+inside step text, ingredient names, and prep notes.
+
 ```
-markdownPlugins(ctx) → remark plugin:
+textTransform(ctx, src) → raw string, before any Markdown parsing:
+  - Detect `format: cooklang` via a raw regex scan of the frontmatter block
+    (file.data.frontmatter isn't populated yet at this stage)
+  - Strip block comments `[- -]` and inline/pure comment lines `--`
+  - Encode `== Section ==` lines into an inert Private-Use-Area sentinel paragraph —
+    this disambiguates them from Obsidian's `==highlight==` inline syntax, which would
+    otherwise swallow a section header as a <mark> span
+  - Encode `~timer{qty%unit}` into a similar PUA sentinel — GFM strikethrough's
+    `singleTilde` option defaults to true, so a lone `~` is a valid strikethrough
+    delimiter and could pair with an unrelated stray tilde elsewhere in the same
+    paragraph, silently corrupting the timer
+  (see src/textTransform.ts)
+
+markdownPlugins(ctx) → remark plugin, runs AFTER GitHubFlavoredMarkdown/
+ObsidianFlavoredMarkdown have already parsed the file:
   - Check file.data.frontmatter?.format === 'cooklang'
-  - Strip frontmatter from file.value with /^---\n[\s\S]*?\n---\n?/
-  - Parse CookLang source → CooklangRecipe struct
-  - Store in file.data.cooklang
-  - Clear mdast: tree.children = []
+  - Single sequential pass over the already-parsed mdast tree's top-level blocks,
+    tracking section/mode state as it goes:
+    - A section-sentinel paragraph starts a new ParsedSection and is spliced out
+    - A `[mode: ...]` / `[duplicate: ...]` directive paragraph updates state and is
+      spliced out (duplicate mode has no rendering effect, matching prior behavior)
+    - Otherwise, unless `[mode: text]` is active: substitute `@ingredient`/`#cookware`
+      (hand-rolled scanner over mdast text nodes, src/mdastSubstitutions.ts), temperature,
+      and timer-sentinel decoding into custom mdast node types (cooklangIngredient,
+      cooklangCookware, cooklangTimer, cooklangTemperature), then convert remaining soft
+      line breaks to hard breaks (scoped to this file only, not the whole site)
+    - The block (paragraph, list, table, blockquote, image, or any other mdast node type)
+      is retained as a SectionBlock, numbered only if it's a plain paragraph outside
+      `[mode: text]` — any other block type is retained as unnumbered supporting content
+  - Store `{ sections }` in file.data.cooklang
+  - Clear mdast: tree.children = [] (the page is still a reorganized view built from
+    file.data.cooklang, not rendered in original document position)
 
 htmlPlugins(ctx) → rehype plugin:
   - Check file.data.cooklang
-  - Build full recipe HAST from parsed data
-  - Resolve [[wiki-links]] using ctx.allSlugs
-  - Replace tree.children with recipe nodes
+  - Build the fixed page chrome (metadata row, cookware list, per-section ingredient
+    list, per-section instructions) via hastscript
+  - Convert each retained SectionBlock's mdast subtree to hast via mdast-util-to-hast,
+    with custom handlers for the 4 cooklang node types; everything else (including
+    wiki-links/embeds Obsidian already produced) passes through mdast-util-to-hast's
+    normal/default conversion untouched
+  - Replace tree.children with the built recipe nodes
 
 externalResources() → inject:
   - Recipe CSS (inline)
   - Servings scaling JS (afterDOMReady, inline)
 ```
-
-The remark plugin runs after Quartz's FrontMatter transformer, so `file.data.frontmatter` is already populated. The htmlPlugins closure captures `ctx` for slug resolution.
 
 ### Page Layout (top to bottom)
 
@@ -179,10 +234,15 @@ Standard spec:
 - `== Section Name ==` — section header (leading/trailing `=` count flexible)
 - `--` — inline comment to end of line; strips that portion, breaks paragraph continuity
 - `[- block comment -]` — block comment
-- `[[target]]` or `[[target|display]]` — Quartz wiki-link (pass through to link resolver)
-- `**bold**`, `*italic*`, `` `code` ``, etc. — inline Markdown (fully rendered)
+- `[[target]]` or `[[target|display]]` — Quartz wiki-link (delegated entirely to Quartz's
+  own ObsidianFlavoredMarkdown transformer — see Wiki-Link Resolution below)
+- Any GFM/Obsidian Markdown (tables, footnotes, task lists, images, callouts, block quotes,
+  nested lists, emphasis, etc.) — parsed and rendered normally, exactly as on any other note
 
-Paragraph (blank-line separated block) = one step. Lines within a paragraph are joined with `<br/>` (not collapsed to space).
+Paragraph (blank-line separated block) = one numbered step, except inside `[mode: text]`.
+Any other Markdown block type (list, table, blockquote, image, ...) used as instruction
+content is retained and rendered but never gets a step number. Lines within a paragraph are
+joined with `<br/>` (not collapsed to space) — scoped to cooklang files only.
 
 ### Extensions Implemented
 
@@ -240,26 +300,22 @@ All cooklang-rs extensions except "Source Name with URL metadata". In detail:
 
 ### Wiki-Link Resolution
 
-Use `ctx.allSlugs` (available in the `htmlPlugins` closure via `BuildCtx`):
-
-1. Strip leading `./` or `/` from target.
-2. Exact match (case-insensitive) against allSlugs.
-3. Filename-only match (last path segment).
-4. Fallback: use target as-is.
-
-Output: `<a href="/resolved/slug" class="internal">display text</a>`
-
-`[[target]]` — display = last path segment of target (title-cased or as-is).
-`[[target|display]]` — use explicit display text.
+Delegated entirely to Quartz's own `ObsidianFlavoredMarkdown` transformer — this plugin has
+**no** wiki-link resolution logic of its own. `[[target]]` / `[[target|display]]` are parsed
+into whatever mdast/hast node type Obsidian's transformer produces upstream, and pass through
+`mdast-util-to-hast` untouched, exactly as on any normal note (including embeds and aliases).
+This requires `CooklangTransformer` to run after `ObsidianFlavoredMarkdown` — see
+"Transformer Ordering Requirement" above.
 
 ### Inline Markdown in Steps
 
-Step text tokens of type `text` may contain inline Markdown. Render:
-- `**bold**` → `<strong>`
-- `*italic*` or `_italic_` → `<em>`
-- `` `code` `` → `<code>`
-- `~~strike~~` → `<del>`
-- Line breaks within the step (from `\n` in the paragraph source) → `<br/>`
+Fully delegated to GFM + Obsidian Markdown parsing — `**bold**`, `*italic*`/`_italic_`,
+`` `code` ``, `~~strike~~`, links, images, footnotes, etc. are parsed and rendered by the
+normal Markdown pipeline, not by hand-rolled regex. Only `@ingredient`/`#cookware`/`~timer`/
+temperature are cooklang-specific inline substitutions layered on top (see Architecture).
+Line breaks within a step (`\n` in the paragraph source) are converted to `<br/>`, scoped to
+cooklang files only (see Architecture — this does not affect line-break rendering elsewhere
+on the site).
 
 ### i18n Labels
 
@@ -335,28 +391,32 @@ interface ParsedTimer {
   unit: string
 }
 
-type StepToken =
-  | { type: 'text'; value: string }
-  | { type: 'ingredient'; ingredient: ParsedIngredient }
-  | { type: 'cookware'; cookware: ParsedCookware }
-  | { type: 'timer'; timer: ParsedTimer }
-  | { type: 'wiki-link'; target: string; display: string | null }
-  | { type: 'temperature'; raw: string }
+// Custom mdast leaf node types — produced by the remark plugin in place of the
+// `@ingredient{}` / `#cookware{}` / `~timer{}` / temperature text they replace, registered
+// via `declare module 'mdast'` so they type-check as normal mdast content anywhere
+// (inside emphasis, links, list items, table cells, etc).
+interface CooklangIngredientNode { type: 'cooklangIngredient'; ingredient: ParsedIngredient }
+interface CooklangCookwareNode { type: 'cooklangCookware'; cookware: ParsedCookware }
+interface CooklangTimerNode { type: 'cooklangTimer'; timer: ParsedTimer }
+interface CooklangTemperatureNode { type: 'cooklangTemperature'; raw: string }
 
-interface ParsedStep {
-  tokens: StepToken[]
-  isText: boolean  // true when [mode: text] is active
+// One retained top-level Markdown block (paragraph, list, table, blockquote, image, or any
+// other mdast node type) belonging to a section's instructions.
+interface SectionBlock {
+  mdastNode: import('mdast').RootContent
+  numbered: boolean  // true only for a plain paragraph outside [mode: text]
+  mode: ParseMode
 }
 
 interface ParsedSection {
   name: string | null  // null = pre-amble (before first == section ==)
-  steps: ParsedStep[]
+  blocks: SectionBlock[]
 }
 
 interface CooklangRecipe {
   sections: ParsedSection[]
-  // Derived by the renderer — not stored in the parse result:
-  // ingredients and cookware are extracted from steps during rendering
+  // Derived by the renderer — not stored in the parse result: ingredients and cookware
+  // are extracted from each section's retained blocks during rendering.
 }
 
 // vfile augmentation
@@ -371,7 +431,7 @@ declare module 'vfile' {
 
 - `@concombres (noha - moyen){1}` — preparation note with parentheses and `-` inside. Parse the `(...)` after the ingredient name but before `{}` as a preparation note.
 - `@crème liquide 30%+{130%g}` — ingredient name contains `%` and `+`. The `%` inside `{}` is the qty/unit separator; the `%+` in the name is literal text.
-- `[[desserts/Crème pâtissière]]` — accented characters in wiki-link targets. Normalize carefully for slug matching.
+- `[[desserts/Crème pâtissière]]` — accented characters in wiki-link targets. Slug normalization is Quartz's own ObsidianFlavoredMarkdown transformer's responsibility, not this plugin's (see Wiki-Link Resolution).
 - `-- Pour la crème pâtissière` on its own line — CookLang comment; strips to end of line and does NOT create a new paragraph break (blank line does that).
 - Pre-section paragraphs (before any `==` section): treated as steps in a `null`-named section. Numbered from 1.
 - Step numbers restart at 1 for each section.
