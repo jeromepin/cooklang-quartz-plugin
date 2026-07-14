@@ -78,23 +78,12 @@ const inlineScriptPlugin: Plugin = {
  * Singleton externals: packages that MUST be the same instance at runtime
  * across all plugins and the Quartz host. Everything else gets bundled.
  */
-const SINGLETON_EXTERNALS = [
-  "preact",
-  "preact/hooks",
-  "preact/jsx-runtime",
-  "preact/compat",
-  "@jackyzha0/quartz",
-  "@jackyzha0/quartz/*",
-  "vfile",
-  "vfile/*",
-  "unified",
-];
+const SINGLETON_EXTERNALS = ["@jackyzha0/quartz", "@jackyzha0/quartz/*", "vfile", "vfile/*", "unified"];
 
 export default defineConfig({
   entry: {
     index: "src/index.ts",
     types: "src/types.ts",
-    "components/index": "src/components/index.ts",
   },
   format: ["esm"],
   dts: true,
@@ -110,10 +99,6 @@ export default defineConfig({
   external: SINGLETON_EXTERNALS,
   banner: {
     js: 'import { createRequire } from "module"; const require = createRequire(import.meta.url);',
-  },
-  esbuildOptions(options) {
-    options.jsx = "automatic";
-    options.jsxImportSource = "preact";
   },
   esbuildPlugins: [inlineScriptPlugin],
 });

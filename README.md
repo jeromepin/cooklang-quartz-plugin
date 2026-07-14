@@ -1,4 +1,7 @@
-# Quartz Community Plugin Template
+# Quartz Cookland Plugin
+
+> [!note]
+> Beside what was provided by the template, everything else was written by Claude because I don't know JS/TS at all
 
 Production-ready template for building, testing, and publishing Quartz community plugins. It mirrors
 Quartz's native plugin patterns and uses a factory-function API similar to Astro integrations:
@@ -6,7 +9,7 @@ plugins are created by functions that return objects with `name` and lifecycle h
 
 ## Highlights
 
-- ✅ Quartz-compatible transformer/filter/emitter examples
+- ✅ Quartz-compatible transformer plugin (CookLang recipes on top of GFM/Obsidian Markdown)
 - ✅ TypeScript-first with exported types for consumers
 - ✅ `tsup` bundling + declaration output
 - ✅ Pre-built `dist/` ships in the repo — instant installation for users
@@ -29,7 +32,7 @@ npm run build
 
 The template is configured to bundle all dependencies by default via `noExternal: [/.*/]` in `tsup.config.ts`. This ensures that users don't need to install any dependencies when using your plugin.
 
-- **Singleton Externals**: Certain packages (`preact`, `vfile`, `unified`, `@jackyzha0/quartz`) are kept external to ensure only one instance of them exists across all plugins.
+- **Singleton Externals**: Certain packages (`vfile`, `unified`, `@jackyzha0/quartz`) are kept external to ensure only one instance of them exists across all plugins.
 - **Native Dependencies**: If your plugin uses native dependencies (like `sharp`, `@napi-rs/simple-git`, etc.), you must exclude them from bundling. Use a regex pattern in `noExternal` to exclude them, for example: `noExternal: [/^(?!sharp)/]`.
 - **CI Verification**: The included CI workflow verifies that `dist/` is up to date on every push.
 
@@ -58,7 +61,7 @@ import * as ExternalPlugin from "./.quartz/plugins";
 
 export default {
   plugins: {
-    transformers: [ExternalPlugin.ExampleTransformer({ highlightToken: "==" })],
+    transformers: [ExternalPlugin.CooklangTransformer()],
   },
 };
 ```
@@ -112,85 +115,6 @@ export const MyTransformer: QuartzTransformerPlugin<{ enabled: boolean }> = (opt
 };
 ```
 
-## Examples included
-
-### Transformer
-
-`ExampleTransformer` shows how to:
-
-- apply a custom remark plugin
-- run a rehype plugin
-- inject CSS/JS resources
-- perform a text transform hook
-
-```ts
-import { ExampleTransformer } from "@quartz-community/plugin-template";
-
-ExampleTransformer({
-  highlightToken: "==",
-  headingClass: "example-plugin-heading",
-  enableGfm: true,
-  addHeadingSlugs: true,
-});
-```
-
-The transformer uses a custom remark plugin to convert `==highlight==` into bold text and a rehype
-plugin to attach a class to all headings. It also injects a small inline CSS/JS snippet.
-
-### Filter
-
-`ExampleFilter` demonstrates frontmatter-driven filtering:
-
-```ts
-ExampleFilter({
-  allowDrafts: false,
-  excludeTags: ["private", "wip"],
-  excludePathPrefixes: ["_drafts/", "_private/"],
-});
-```
-
-### Emitter
-
-`ExampleEmitter` emits a JSON manifest of all pages:
-
-```ts
-ExampleEmitter({
-  manifestSlug: "plugin-manifest",
-  includeFrontmatter: true,
-  metadata: { project: "My Garden" },
-  transformManifest: (json) => json.replace("My Garden", "Quartz"),
-});
-```
-
-## API reference
-
-### `ExampleTransformer(options)`
-
-| Option            | Type      | Default                    | Description                   |
-| ----------------- | --------- | -------------------------- | ----------------------------- |
-| `highlightToken`  | `string`  | `"=="`                     | Token used to highlight text. |
-| `headingClass`    | `string`  | `"example-plugin-heading"` | Class added to headings.      |
-| `enableGfm`       | `boolean` | `true`                     | Enables `remark-gfm`.         |
-| `addHeadingSlugs` | `boolean` | `true`                     | Enables `rehype-slug`.        |
-
-### `ExampleFilter(options)`
-
-| Option                | Type       | Default                     | Description               |
-| --------------------- | ---------- | --------------------------- | ------------------------- |
-| `allowDrafts`         | `boolean`  | `false`                     | Publish draft pages.      |
-| `excludeTags`         | `string[]` | `["private"]`               | Tags to exclude.          |
-| `excludePathPrefixes` | `string[]` | `["_drafts/", "_private/"]` | Path prefixes to exclude. |
-
-### `ExampleEmitter(options)`
-
-| Option                | Type                       | Default                                   | Description                               |
-| --------------------- | -------------------------- | ----------------------------------------- | ----------------------------------------- |
-| `manifestSlug`        | `string`                   | `"plugin-manifest"`                       | Output filename (without extension).      |
-| `includeFrontmatter`  | `boolean`                  | `true`                                    | Include frontmatter in output.            |
-| `metadata`            | `Record<string, unknown>`  | `{ generator: "Quartz Plugin Template" }` | Extra metadata in manifest.               |
-| `transformManifest`   | `(json: string) => string` | `undefined`                               | Custom transformer for emitted JSON.      |
-| `manifestScriptClass` | `string`                   | `undefined`                               | Optional CSS class if rendered into HTML. |
-
 ## Testing
 
 ```bash
@@ -212,15 +136,16 @@ repository secrets.
 
 ## Component Plugins (UI Components)
 
-In addition to transformer/filter/emitter plugins, you can create **component plugins** that provide
-UI elements for Quartz layouts. See `src/components/ExampleComponent.tsx` for a reference.
+In addition to transformer/filter/emitter plugins, Quartz also supports **component plugins**
+that provide UI elements for Quartz layouts (this repo doesn't currently ship one — the pattern
+below is a reference for building one).
 
 ### Component Pattern
 
 ```tsx
 import type { QuartzComponent, QuartzComponentConstructor } from "@quartz-community/types";
-import style from "./styles/example.scss";
-import script from "./scripts/example.inline.ts";
+import style from "./styles/my-component.scss";
+import script from "./scripts/my-component.inline.ts";
 
 export default ((opts?: MyComponentOptions) => {
   const Component: QuartzComponent = (props) => {
@@ -289,7 +214,8 @@ Component scripts run in the browser and must handle Quartz's SPA navigation. Ke
 4. **Use `window.addCleanup()`** - Register cleanup functions for event listeners
 5. **Use `fetchData` global** - Access page metadata via the `fetchData` promise (handles base path correctly)
 
-See `src/components/scripts/example.inline.ts` for a complete example with all patterns.
+See `src/components/scripts/recipe.inline.ts` for a real example following these patterns
+(servings-scaling for CookLang recipes).
 
 ### Common Helper Functions
 

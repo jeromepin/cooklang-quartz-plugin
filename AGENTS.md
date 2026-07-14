@@ -88,7 +88,7 @@ Use `vitest`. Mock the `BuildCtx` and `ProcessedContent` when testing transforme
 
 ## Build System Quirks
 
-- **SINGLETON_EXTERNALS**: `SINGLETON_EXTERNALS` in `tsup.config.ts` defines packages that must NOT be bundled — they must be the same instance across all plugins (`preact`, `vfile`, `unified`, `@jackyzha0/quartz`). Everything else is bundled into `dist/`.
+- **SINGLETON_EXTERNALS**: `SINGLETON_EXTERNALS` in `tsup.config.ts` defines packages that must NOT be bundled — they must be the same instance across all plugins (`vfile`, `unified`, `@jackyzha0/quartz`). Everything else is bundled into `dist/`.
 - **.inline.ts**: Files ending in `.inline.ts` are bundled as raw strings for client-side injection.
 - **.scss**: Styles are compiled to CSS strings and attached to components via `Component.css`.
 - **Branded Types**: Use `FullSlug` and `FilePath` from `@quartz-community/types` for path safety.
