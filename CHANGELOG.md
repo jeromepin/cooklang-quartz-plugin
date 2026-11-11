@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ingredient names, and prep notes.
 - **Breaking:** wiki-link resolution (`[[target]]`) is delegated entirely to Quartz's own
   `ObsidianFlavoredMarkdown` transformer. `CooklangTransformer` must now be registered
-  *after* `GitHubFlavoredMarkdown`/`ObsidianFlavoredMarkdown` in `quartz.config.ts` — see
+  _after_ `GitHubFlavoredMarkdown`/`ObsidianFlavoredMarkdown` in `quartz.config.ts` — see
   README.md.
 
 ### Added

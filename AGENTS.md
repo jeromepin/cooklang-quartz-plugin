@@ -116,17 +116,17 @@ No `.cook` support needed at this time.
 All known keys used in the consumer site:
 
 ```yaml
-format: cooklang        # required — triggers this plugin
-title: string           # recipe title
-servings: number        # base serving count
-servings_label: string  # optional unit label (e.g. "madeleines")
-prep time: string       # e.g. "150 minutes"
-cook time: string       # e.g. "12 minutes"
-time required: string   # e.g. "162 minutes"
+format: cooklang # required — triggers this plugin
+title: string # recipe title
+servings: number # base serving count
+servings_label: string # optional unit label (e.g. "madeleines")
+prep time: string # e.g. "150 minutes"
+cook time: string # e.g. "12 minutes"
+time required: string # e.g. "162 minutes"
 tags: string | string[] # single string or list
-locale: string          # e.g. "fr" — drives i18n labels
-source: string          # URL to original recipe
-draft: boolean          # draft flag
+locale: string # e.g. "fr" — drives i18n labels
+source: string # URL to original recipe
+draft: boolean # draft flag
 ```
 
 ### Plugin Type
@@ -137,7 +137,7 @@ Quartz standard chrome (breadcrumbs, `<h1>` title, date, reading time, tags) is 
 
 ### Transformer Ordering Requirement (important)
 
-`CooklangTransformer` **must** be registered *after* `GitHubFlavoredMarkdown` and
+`CooklangTransformer` **must** be registered _after_ `GitHubFlavoredMarkdown` and
 `ObsidianFlavoredMarkdown` in the consuming site's `quartz.config.ts` `transformers` array:
 
 ```ts
@@ -225,6 +225,7 @@ No two-column layout. Single column. The left sidebar already lists recipes — 
 ### CookLang Syntax Parsed
 
 Standard spec:
+
 - `@ingredient{qty%unit}` — ingredient with quantity and unit
 - `@ingredient{}` — ingredient, no quantity
 - `@singleword` — ingredient, single word, no braces needed
@@ -249,6 +250,7 @@ joined with `<br/>` (not collapsed to space) — scoped to cooklang files only.
 All cooklang-rs extensions except "Source Name with URL metadata". In detail:
 
 **Modifiers** (prefix on `@`):
+
 - `@?ingredient{}` — optional; shown with "OPT" badge in ingredient list
 - `@-ingredient{}` — hidden; NOT in ingredient list, still shown inline in steps
 - `@&ingredient{}` — reference to prior ingredient; NOT added to ingredient list again
@@ -264,12 +266,14 @@ All cooklang-rs extensions except "Source Name with URL metadata". In detail:
 **Range quantity scaling**: scale from the low end. `{2-4}` at base 4 → at 8 shows `4-8`. Store both ends in `data-base-low` and `data-base-high`. Display as `N-M`.
 
 **Modes** (parsing directives, applied to subsequent steps until changed):
+
 - `[mode: all]` / `[mode: default]` — standard
 - `[mode: ingredients]` — only component definitions; text omitted
 - `[mode: steps]` — all ingredients treated as references unless `@+`
 - `[mode: text]` — all steps become plain text (no component parsing)
 
 **Duplicate handling**:
+
 - `[duplicate: new]` / `[duplicate: default]` — same-name creates new entries
 - `[duplicate: reference]` / `[duplicate: ref]` — same-name auto-refs prior definition
 
@@ -321,108 +325,120 @@ on the site).
 
 Section headings and UI strings are locale-aware via `frontmatter.locale`.
 
-| Key | `fr` | `en` (default) |
-|-----|------|----------------|
-| Ingredients section heading | Ingrédients | Ingredients |
-| Instructions section heading | Instructions | Instructions |
-| Cookware section heading | Ustensiles | Equipment |
-| Servings label | Portions | Servings |
-| Optional badge | OPT | OPT |
-| Recipe badge | RECETTE | RECIPE |
-| Source link label | Source | Source |
-| Prep time label | Préparation | Prep |
-| Cook time label | Cuisson | Cook |
-| Total time label | Total | Total |
+| Key                          | `fr`         | `en` (default) |
+| ---------------------------- | ------------ | -------------- |
+| Ingredients section heading  | Ingrédients  | Ingredients    |
+| Instructions section heading | Instructions | Instructions   |
+| Cookware section heading     | Ustensiles   | Equipment      |
+| Servings label               | Portions     | Servings       |
+| Optional badge               | OPT          | OPT            |
+| Recipe badge                 | RECETTE      | RECIPE         |
+| Source link label            | Source       | Source         |
+| Prep time label              | Préparation  | Prep           |
+| Cook time label              | Cuisson      | Cook           |
+| Total time label             | Total        | Total          |
 
 Add new locales in `src/i18n.ts` as a plain lookup map keyed by locale string.
 
 ### CSS Class Reference
 
-| Class | Element | Purpose |
-|-------|---------|---------|
-| `.recipe-meta` | div | Metadata row wrapper |
-| `.servings-control` | div | Servings ± widget |
-| `.servings-btn` | button | Increment/decrement button |
-| `.recipe-time-chips` | div | Time badges row |
-| `.recipe-time-chip` | span | Individual time badge |
-| `.recipe-source` | a | Source link |
-| `.ing-list` | ul | Ingredient list |
-| `.ing-list li` | li | Ingredient row |
-| `.ingredient_modifiers` | span | OPT / RECIPE badge |
-| `.scalable-value` | span | Scalable numeric quantity |
-| `.scalable-range` | span | Scalable range quantity |
-| `.unit` | span | Unit label |
-| `.ingredient_ref` | span | Ingredient reference in step text |
-| `.cookware_ref` | span | Cookware reference in step text |
-| `.timer_ref` | span | Timer reference in step text |
-| `.cooklang-temperature` | span | Temperature value in step text |
-| `.step-block` | div | Step wrapper |
-| `.step-num` | span | Step number (e.g. "1.") |
-| `.recipe-link` | a | @@recipe link in steps |
+| Class                   | Element | Purpose                           |
+| ----------------------- | ------- | --------------------------------- |
+| `.recipe-meta`          | div     | Metadata row wrapper              |
+| `.servings-control`     | div     | Servings ± widget                 |
+| `.servings-btn`         | button  | Increment/decrement button        |
+| `.recipe-time-chips`    | div     | Time badges row                   |
+| `.recipe-time-chip`     | span    | Individual time badge             |
+| `.recipe-source`        | a       | Source link                       |
+| `.ing-list`             | ul      | Ingredient list                   |
+| `.ing-list li`          | li      | Ingredient row                    |
+| `.ingredient_modifiers` | span    | OPT / RECIPE badge                |
+| `.scalable-value`       | span    | Scalable numeric quantity         |
+| `.scalable-range`       | span    | Scalable range quantity           |
+| `.unit`                 | span    | Unit label                        |
+| `.ingredient_ref`       | span    | Ingredient reference in step text |
+| `.cookware_ref`         | span    | Cookware reference in step text   |
+| `.timer_ref`            | span    | Timer reference in step text      |
+| `.cooklang-temperature` | span    | Temperature value in step text    |
+| `.step-block`           | div     | Step wrapper                      |
+| `.step-num`             | span    | Step number (e.g. "1.")           |
+| `.recipe-link`          | a       | @@recipe link in steps            |
 
 ### Data Structures
 
 ```ts
 // Ingredient quantity: scalar, range, or none
 type Quantity =
-  | { kind: 'scalar'; value: string }
-  | { kind: 'range'; low: string; high: string }
-  | { kind: 'none' }
+  | { kind: "scalar"; value: string }
+  | { kind: "range"; low: string; high: string }
+  | { kind: "none" };
 
-type IngredientModifier = 'optional' | 'hidden' | 'reference' | 'new' | 'recipe' | null
+type IngredientModifier = "optional" | "hidden" | "reference" | "new" | "recipe" | null;
 
 interface ParsedIngredient {
-  name: string
-  alias: string | null
-  quantity: Quantity
-  unit: string | null
-  modifier: IngredientModifier
-  preparation: string | null  // text in (parens) after the ingredient
+  name: string;
+  alias: string | null;
+  quantity: Quantity;
+  unit: string | null;
+  modifier: IngredientModifier;
+  preparation: string | null; // text in (parens) after the ingredient
 }
 
 interface ParsedCookware {
-  name: string
-  quantity: string | null
+  name: string;
+  quantity: string | null;
 }
 
 interface ParsedTimer {
-  name: string | null
-  quantity: string
-  unit: string
+  name: string | null;
+  quantity: string;
+  unit: string;
 }
 
 // Custom mdast leaf node types — produced by the remark plugin in place of the
 // `@ingredient{}` / `#cookware{}` / `~timer{}` / temperature text they replace, registered
 // via `declare module 'mdast'` so they type-check as normal mdast content anywhere
 // (inside emphasis, links, list items, table cells, etc).
-interface CooklangIngredientNode { type: 'cooklangIngredient'; ingredient: ParsedIngredient }
-interface CooklangCookwareNode { type: 'cooklangCookware'; cookware: ParsedCookware }
-interface CooklangTimerNode { type: 'cooklangTimer'; timer: ParsedTimer }
-interface CooklangTemperatureNode { type: 'cooklangTemperature'; raw: string }
+interface CooklangIngredientNode {
+  type: "cooklangIngredient";
+  ingredient: ParsedIngredient;
+}
+interface CooklangCookwareNode {
+  type: "cooklangCookware";
+  cookware: ParsedCookware;
+}
+interface CooklangTimerNode {
+  type: "cooklangTimer";
+  timer: ParsedTimer;
+}
+interface CooklangTemperatureNode {
+  type: "cooklangTemperature";
+  raw: string;
+}
 
 // One retained top-level Markdown block (paragraph, list, table, blockquote, image, or any
 // other mdast node type) belonging to a section's instructions.
 interface SectionBlock {
-  mdastNode: import('mdast').RootContent
-  numbered: boolean  // true only for a plain paragraph outside [mode: text]
-  mode: ParseMode
+  mdastNode: import("mdast").RootContent;
+  numbered: boolean; // true only for a plain paragraph outside [mode: text]
+  mode: ParseMode;
 }
 
 interface ParsedSection {
-  name: string | null  // null = pre-amble (before first == section ==)
-  blocks: SectionBlock[]
+  name: string | null; // null = pre-amble (before first == section ==)
+  blocks: SectionBlock[];
 }
 
 interface CooklangRecipe {
-  sections: ParsedSection[]
+  sections: ParsedSection[];
   // Derived by the renderer — not stored in the parse result: ingredients and cookware
   // are extracted from each section's retained blocks during rendering.
 }
 
 // vfile augmentation
-declare module 'vfile' {
+declare module "vfile" {
   interface DataMap {
-    cooklang: CooklangRecipe
+    cooklang: CooklangRecipe;
   }
 }
 ```

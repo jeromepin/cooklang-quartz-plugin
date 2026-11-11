@@ -77,7 +77,7 @@ Everything else in the file is parsed as regular Markdown — GFM (tables, footn
 lists) and Obsidian-flavored syntax (wiki-links, embeds, callouts, highlights) all work
 inside step text, ingredient names, and prep notes, exactly as on any other note.
 
-**Setup requirement:** register `CooklangTransformer` *after* `GitHubFlavoredMarkdown` and
+**Setup requirement:** register `CooklangTransformer` _after_ `GitHubFlavoredMarkdown` and
 `ObsidianFlavoredMarkdown` in `quartz.config.ts`, since it reads the mdast tree those
 transformers have already produced rather than parsing raw Markdown itself:
 

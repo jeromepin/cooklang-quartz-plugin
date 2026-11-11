@@ -84,7 +84,9 @@ export function renderCooklangFixture(
   const { file } = parseCooklangFixture(rawSrcWithFrontmatter, frontmatterOverrides, ctxOverrides);
 
   const hastTree: { type: "root"; children: unknown[] } = { type: "root", children: [] };
-  const rehypePlugin = (transformer.htmlPlugins!(ctx)[0] as () => (tree: typeof hastTree, file: VFile) => void)();
+  const rehypePlugin = (
+    transformer.htmlPlugins!(ctx)[0] as () => (tree: typeof hastTree, file: VFile) => void
+  )();
   rehypePlugin(hastTree, file);
 
   return hastTree;

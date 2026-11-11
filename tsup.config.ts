@@ -78,7 +78,13 @@ const inlineScriptPlugin: Plugin = {
  * Singleton externals: packages that MUST be the same instance at runtime
  * across all plugins and the Quartz host. Everything else gets bundled.
  */
-const SINGLETON_EXTERNALS = ["@jackyzha0/quartz", "@jackyzha0/quartz/*", "vfile", "vfile/*", "unified"];
+const SINGLETON_EXTERNALS = [
+  "@jackyzha0/quartz",
+  "@jackyzha0/quartz/*",
+  "vfile",
+  "vfile/*",
+  "unified",
+];
 
 export default defineConfig({
   entry: {
