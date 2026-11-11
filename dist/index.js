@@ -505,7 +505,7 @@ function scanName(src, pos) {
   const nameRaw = wsMatch ? wsMatch[0] : "";
   return { nameRaw, nextPos: pos + nameRaw.length, braceIdx: -1 };
 }
-function scanIngredientsAndCookware(src, mode) {
+function scanIngredientsAndCookware(src, mode, duplicate) {
   const nodes = [];
   let pos = 0;
   let textStart = 0;
@@ -519,6 +519,7 @@ function scanIngredientsAndCookware(src, mode) {
       flushText(pos);
       pos++;
       let modifier = null;
+      let intermediate = false;
       if (src[pos] === "@") {
         modifier = "recipe";
         pos++;
@@ -533,7 +534,10 @@ function scanIngredientsAndCookware(src, mode) {
         pos++;
         if (src[pos] === "(") {
           const closeIdx = src.indexOf(")", pos);
-          if (closeIdx !== -1) pos = closeIdx + 1;
+          if (closeIdx !== -1) {
+            pos = closeIdx + 1;
+            intermediate = true;
+          }
         }
       } else if (src[pos] === "+") {
         modifier = "new";
@@ -564,6 +568,7 @@ function scanIngredientsAndCookware(src, mode) {
         }
       }
       if (mode === "steps" && modifier !== "new") modifier = "reference";
+      const implicitReference = duplicate === "reference" && (modifier === null || modifier === "optional");
       const node2 = {
         type: "cooklangIngredient",
         ingredient: {
@@ -572,7 +577,9 @@ function scanIngredientsAndCookware(src, mode) {
           quantity,
           unit,
           modifier,
-          preparation: prepFromBraces ?? prepFromName
+          preparation: prepFromBraces ?? prepFromName,
+          ...intermediate ? { intermediate: true } : {},
+          ...implicitReference ? { implicitReference: true } : {}
         }
       };
       nodes.push(node2);
@@ -607,7 +614,7 @@ function scanIngredientsAndCookware(src, mode) {
   return nodes;
 }
 var HAS_INGREDIENT_OR_COOKWARE_RE = new RegExp(`[@${COOKWARE_MARKER}]`);
-function substituteIngredientsAndCookware(root2, mode) {
+function substituteIngredientsAndCookware(root2, mode, duplicate = "new") {
   visitParents(root2, "text", (node2, parents) => {
     if (!HAS_INGREDIENT_OR_COOKWARE_RE.test(node2.value)) return void 0;
     const parent = parents[parents.length - 1];
@@ -615,7 +622,7 @@ function substituteIngredientsAndCookware(root2, mode) {
     const siblings = parent.children;
     const index = siblings.indexOf(node2);
     if (index === -1) return void 0;
-    const replacement = scanIngredientsAndCookware(node2.value, mode);
+    const replacement = scanIngredientsAndCookware(node2.value, mode, duplicate);
     siblings.splice(index, 1, ...replacement);
     return index + replacement.length;
   });
@@ -3279,6 +3286,127 @@ function i18n(locale) {
   return locales[locale] ?? locales[locale.split("-")[0]] ?? en_US_default;
 }
 
+// src/quantity.ts
+var KNOWN_UNITS = {
+  mg: { dim: "mass", factor: 1e-3 },
+  g: { dim: "mass", factor: 1 },
+  kg: { dim: "mass", factor: 1e3 },
+  ml: { dim: "volume", factor: 1 },
+  cl: { dim: "volume", factor: 10 },
+  dl: { dim: "volume", factor: 100 },
+  l: { dim: "volume", factor: 1e3 }
+};
+var FIT_UNITS = {
+  mass: [
+    { unit: "kg", factor: 1e3 },
+    { unit: "g", factor: 1 }
+  ],
+  volume: [
+    { unit: "L", factor: 1e3 },
+    { unit: "cL", factor: 10 },
+    { unit: "mL", factor: 1 }
+  ]
+};
+function knownUnit(unit) {
+  return KNOWN_UNITS[unit.trim().toLowerCase()];
+}
+function parseNumber(raw) {
+  const s2 = raw.trim();
+  if (/^\d+(?:\.\d+)?$/.test(s2) || /^\.\d+$/.test(s2)) return Number(s2);
+  const frac = s2.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (frac?.[1] && frac[2] && Number(frac[2]) !== 0) return Number(frac[1]) / Number(frac[2]);
+  return null;
+}
+function toValue(q) {
+  if (q.kind === "none") return null;
+  if (q.kind === "range") {
+    const low = parseNumber(q.low);
+    const high = parseNumber(q.high);
+    if (low === null || high === null) return { kind: "text", value: `${q.low}-${q.high}` };
+    return { kind: "range", low, high, raw: { low: q.low, high: q.high } };
+  }
+  const n = parseNumber(q.value);
+  return n === null ? { kind: "text", value: q.value } : { kind: "number", value: n, raw: q.value };
+}
+function addValues(a, b) {
+  if (a.kind === "number" && b.kind === "number")
+    return { kind: "number", value: a.value + b.value };
+  const [aLow, aHigh] = a.kind === "number" ? [a.value, a.value] : [a.low, a.high];
+  const [bLow, bHigh] = b.kind === "number" ? [b.value, b.value] : [b.low, b.high];
+  return { kind: "range", low: aLow + bLow, high: aHigh + bHigh };
+}
+function scaleValue(v, factor) {
+  if (factor === 1) return v;
+  return v.kind === "number" ? { kind: "number", value: v.value * factor } : { kind: "range", low: v.low * factor, high: v.high * factor };
+}
+function round(n) {
+  return Math.round(n * 1e3) / 1e3;
+}
+function formatNumber(n) {
+  return String(round(n));
+}
+var GroupedQuantity = class {
+  buckets = [];
+  other = [];
+  add(quantity, unit) {
+    const value = toValue(quantity);
+    if (!value) return;
+    if (value.kind === "text") {
+      this.other.push({ value, unit });
+      return;
+    }
+    const known = unit ? knownUnit(unit) : void 0;
+    if (unit && known) {
+      const bucket2 = this.buckets.find(
+        (b) => b.kind === "known" && b.dim === known.dim
+      );
+      if (!bucket2) {
+        this.buckets.push({
+          kind: "known",
+          dim: known.dim,
+          unit,
+          factor: known.factor,
+          value,
+          summed: false
+        });
+        return;
+      }
+      bucket2.value = addValues(bucket2.value, scaleValue(value, known.factor / bucket2.factor));
+      bucket2.summed = true;
+      return;
+    }
+    const bucket = this.buckets.find(
+      (b) => b.kind === "plain" && b.unit === unit
+    );
+    if (!bucket) {
+      this.buckets.push({ kind: "plain", unit, value });
+      return;
+    }
+    bucket.value = addValues(bucket.value, value);
+  }
+  isEmpty() {
+    return this.buckets.length === 0 && this.other.length === 0;
+  }
+  toList() {
+    const items = this.buckets.map(
+      (b) => b.kind === "known" && b.summed ? fit(b) : b
+    );
+    return [...items.map(({ value, unit }) => ({ value: roundValue(value), unit })), ...this.other];
+  }
+};
+function roundValue(v) {
+  if (v.kind === "number") return { ...v, value: round(v.value) };
+  if (v.kind === "range") return { ...v, low: round(v.low), high: round(v.high) };
+  return v;
+}
+function fit(bucket) {
+  const base = scaleValue(bucket.value, bucket.factor);
+  const smallest = base.kind === "number" ? base.value : base.low;
+  const candidates = FIT_UNITS[bucket.dim];
+  const target = candidates.find((c) => smallest / c.factor >= 1) ?? candidates[candidates.length - 1];
+  return { value: scaleValue(base, 1 / target.factor), unit: target.unit };
+}
+
 // src/renderer.ts
 function slugify(text2) {
   return text2.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -3314,31 +3442,36 @@ function renderBlock(block, stepNum) {
   const className = block.mode === "text" ? "step-block text-step" : "step-block";
   return h("div", { class: className }, children);
 }
-function renderQuantityHast(ingredient) {
-  const unitEl = ingredient.unit ? h("span", { class: "unit" }, ingredient.unit) : null;
-  if (ingredient.quantity.kind === "scalar") {
-    const valueEl = h(
+function renderQuantityItem(item) {
+  const { value, unit } = item;
+  let valueEl;
+  if (value.kind === "number") {
+    const base = formatNumber(value.value);
+    valueEl = h("span", { class: "scalable-value", "data-base": base }, value.raw ?? base);
+  } else if (value.kind === "range") {
+    const low = formatNumber(value.low);
+    const high = formatNumber(value.high);
+    valueEl = h(
       "span",
-      { class: "scalable-value", "data-base": ingredient.quantity.value },
-      ingredient.quantity.value
+      { class: "scalable-range", "data-base-low": low, "data-base-high": high },
+      value.raw ? `${value.raw.low}-${value.raw.high}` : `${low}-${high}`
     );
-    return h("span", { class: "ing-qty" }, unitEl ? [valueEl, " ", unitEl] : [valueEl]);
+  } else {
+    valueEl = h("span", { class: "text-value" }, value.value);
   }
-  if (ingredient.quantity.kind === "range") {
-    const rangeEl = h(
-      "span",
-      {
-        class: "scalable-range",
-        "data-base-low": ingredient.quantity.low,
-        "data-base-high": ingredient.quantity.high
-      },
-      `${ingredient.quantity.low}-${ingredient.quantity.high}`
-    );
-    return h("span", { class: "ing-qty" }, unitEl ? [rangeEl, " ", unitEl] : [rangeEl]);
-  }
-  return null;
+  return unit ? [valueEl, { type: "text", value: " " }, h("span", { class: "unit" }, unit)] : [valueEl];
 }
-function renderIngredientLi(ingredient, labels) {
+function renderQuantityHast(quantities) {
+  const items = quantities.toList();
+  if (items.length === 0) return null;
+  const children = [];
+  items.forEach((item, i) => {
+    if (i > 0) children.push({ type: "text", value: ", " });
+    children.push(...renderQuantityItem(item));
+  });
+  return h("span", { class: "ing-qty" }, children);
+}
+function renderIngredientLi({ ingredient, quantities }, labels) {
   const display = ingredient.alias ?? ingredient.name;
   const prepEl = ingredient.preparation ? [" ", h("em", { class: "ing-prep" }, `(${ingredient.preparation})`)] : [];
   let modBadge;
@@ -3349,22 +3482,49 @@ function renderIngredientLi(ingredient, labels) {
   } else {
     modBadge = h("span", { class: "ingredient_modifiers" });
   }
-  const qtyEl = renderQuantityHast(ingredient);
+  const qtyEl = renderQuantityHast(quantities);
   return h("li", [
     h("span", [modBadge, h("span", [display, ...prepEl])]),
     ...qtyEl ? [qtyEl] : []
   ]);
 }
-function collectIngredients(blocks) {
-  const ingredients = [];
-  for (const block of blocks) {
-    visit(block.mdastNode, "cooklangIngredient", (node2) => {
-      const { modifier } = node2.ingredient;
-      if (modifier === "hidden" || modifier === "reference") return;
-      ingredients.push(node2.ingredient);
-    });
-  }
-  return ingredients;
+function findLast(items, pred) {
+  for (let i = items.length - 1; i >= 0; i--) if (pred(items[i])) return items[i];
+  return void 0;
+}
+function sameName(a, b) {
+  return a.name.trim().toLowerCase() === b.name.trim().toLowerCase();
+}
+function collectIngredients(sections) {
+  const definitions = [];
+  const perSection = sections.map(() => []);
+  sections.forEach((section, sectionIdx) => {
+    for (const block of section.blocks) {
+      visit(block.mdastNode, "cooklangIngredient", (node2) => {
+        const ing = node2.ingredient;
+        if (ing.intermediate) return;
+        let target;
+        if (ing.modifier === "reference") {
+          target = findLast(definitions, (d) => sameName(d.ingredient, ing));
+        } else if (ing.implicitReference) {
+          const optional = ing.modifier === "optional";
+          target = findLast(
+            definitions,
+            (d) => sameName(d.ingredient, ing) && d.ingredient.modifier === "optional" === optional
+          );
+        }
+        if (target) {
+          target.quantities.add(ing.quantity, ing.unit);
+          return;
+        }
+        const entry = { ingredient: ing, quantities: new GroupedQuantity() };
+        entry.quantities.add(ing.quantity, ing.unit);
+        definitions.push(entry);
+        if (ing.modifier !== "hidden") perSection[sectionIdx].push(entry);
+      });
+    }
+  });
+  return perSection;
 }
 function collectCookware(sections) {
   const seen = /* @__PURE__ */ new Set();
@@ -3432,9 +3592,10 @@ function buildRecipeHast(recipe, frontmatter, locale) {
   }
   const ingredientsNodes = [];
   let hasAnyIngredients = false;
-  for (const section of recipe.sections) {
-    const ingredients = collectIngredients(section.blocks);
-    if (ingredients.length === 0) continue;
+  const ingredientsPerSection = collectIngredients(recipe.sections);
+  recipe.sections.forEach((section, sectionIdx) => {
+    const ingredients = ingredientsPerSection[sectionIdx] ?? [];
+    if (ingredients.length === 0) return;
     hasAnyIngredients = true;
     if (section.name) {
       ingredientsNodes.push(h("h3", { id: `ing-${slugify(section.name)}` }, section.name));
@@ -3446,7 +3607,7 @@ function buildRecipeHast(recipe, frontmatter, locale) {
         ingredients.map((ing) => renderIngredientLi(ing, labels))
       )
     );
-  }
+  });
   if (hasAnyIngredients) ingredientsNodes.unshift(h("h2", { id: "ingredients" }, labels.ingredients));
   const instructionsNodes = [h("h2", { id: "instructions" }, labels.instructions)];
   for (const section of recipe.sections) {
@@ -3499,6 +3660,7 @@ var CooklangTransformer = (_opts) => {
         if (!isCooklangFile(file)) return;
         const sections = [{ name: null, blocks: [] }];
         let mode = "default";
+        let duplicate = "new";
         for (const node2 of tree.children) {
           if (node2.type === "paragraph") {
             const text2 = toString(node2);
@@ -3512,10 +3674,14 @@ var CooklangTransformer = (_opts) => {
               mode = newMode;
               continue;
             }
-            if (parseDuplicateDirective(text2) !== null) continue;
+            const newDuplicate = parseDuplicateDirective(text2);
+            if (newDuplicate !== null) {
+              duplicate = newDuplicate;
+              continue;
+            }
           }
           if (mode !== "text") {
-            substituteIngredientsAndCookware(node2, mode);
+            substituteIngredientsAndCookware(node2, mode, duplicate);
             substituteTemperature(node2);
             substituteTimerSentinels(node2);
           }

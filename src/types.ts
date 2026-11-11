@@ -15,6 +15,12 @@ export interface ParsedIngredient {
   unit: string | null
   modifier: IngredientModifier
   preparation: string | null
+  // `@&(~1)dough{}`: refers to the output of a previous step/section, not to an
+  // ingredient. Never listed nor merged (cooklang-rs intermediate preparations).
+  intermediate?: true
+  // Set under `[duplicate: ref]`: becomes a reference if a same-named ingredient
+  // (with the same optional-ness) was defined earlier, a definition otherwise.
+  implicitReference?: true
 }
 
 export interface ParsedCookware {
