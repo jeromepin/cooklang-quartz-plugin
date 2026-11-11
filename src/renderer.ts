@@ -15,6 +15,8 @@ import type {
   SectionBlock,
 } from "./types"
 import { i18n } from "./i18n/index"
+import { GroupedQuantity, formatNumber } from "./quantity"
+import type { GroupedQuantityItem } from "./quantity"
 
 function slugify(text: string): string {
   return text
@@ -63,35 +65,42 @@ function renderBlock(block: SectionBlock, stepNum: number | null): Element {
   return h("div", { class: className }, children)
 }
 
-function renderQuantityHast(ingredient: ParsedIngredient): ElementContent | null {
-  const unitEl = ingredient.unit ? h("span", { class: "unit" }, ingredient.unit) : null
-
-  if (ingredient.quantity.kind === "scalar") {
-    const valueEl = h(
+function renderQuantityItem(item: GroupedQuantityItem): ElementContent[] {
+  const { value, unit } = item
+  let valueEl: Element
+  if (value.kind === "number") {
+    const base = formatNumber(value.value)
+    valueEl = h("span", { class: "scalable-value", "data-base": base }, value.raw ?? base)
+  } else if (value.kind === "range") {
+    const low = formatNumber(value.low)
+    const high = formatNumber(value.high)
+    valueEl = h(
       "span",
-      { class: "scalable-value", "data-base": ingredient.quantity.value },
-      ingredient.quantity.value,
+      { class: "scalable-range", "data-base-low": low, "data-base-high": high },
+      value.raw ? `${value.raw.low}-${value.raw.high}` : `${low}-${high}`,
     )
-    return h("span", { class: "ing-qty" }, unitEl ? [valueEl, " ", unitEl] : [valueEl])
+  } else {
+    // Free text ("un peu") can't be scaled.
+    valueEl = h("span", { class: "text-value" }, value.value)
   }
-
-  if (ingredient.quantity.kind === "range") {
-    const rangeEl = h(
-      "span",
-      {
-        class: "scalable-range",
-        "data-base-low": ingredient.quantity.low,
-        "data-base-high": ingredient.quantity.high,
-      },
-      `${ingredient.quantity.low}-${ingredient.quantity.high}`,
-    )
-    return h("span", { class: "ing-qty" }, unitEl ? [rangeEl, " ", unitEl] : [rangeEl])
-  }
-
-  return null
+  return unit ? [valueEl, { type: "text", value: " " }, h("span", { class: "unit" }, unit)] : [valueEl]
 }
 
-function renderIngredientLi(ingredient: ParsedIngredient, labels: ReturnType<typeof i18n>["components"]["recipe"]): Element {
+function renderQuantityHast(quantities: GroupedQuantity): ElementContent | null {
+  const items = quantities.toList()
+  if (items.length === 0) return null
+  const children: ElementContent[] = []
+  items.forEach((item, i) => {
+    if (i > 0) children.push({ type: "text", value: ", " })
+    children.push(...renderQuantityItem(item))
+  })
+  return h("span", { class: "ing-qty" }, children)
+}
+
+function renderIngredientLi(
+  { ingredient, quantities }: ListedIngredient,
+  labels: ReturnType<typeof i18n>["components"]["recipe"],
+): Element {
   const display = ingredient.alias ?? ingredient.name
   const prepEl = ingredient.preparation
     ? [" ", h("em", { class: "ing-prep" }, `(${ingredient.preparation})`)]
@@ -106,7 +115,7 @@ function renderIngredientLi(ingredient: ParsedIngredient, labels: ReturnType<typ
     modBadge = h("span", { class: "ingredient_modifiers" })
   }
 
-  const qtyEl = renderQuantityHast(ingredient)
+  const qtyEl = renderQuantityHast(quantities)
 
   return h("li", [
     h("span", [modBadge, h("span", [display, ...prepEl])]),
@@ -114,16 +123,63 @@ function renderIngredientLi(ingredient: ParsedIngredient, labels: ReturnType<typ
   ])
 }
 
-function collectIngredients(blocks: SectionBlock[]): ParsedIngredient[] {
-  const ingredients: ParsedIngredient[] = []
-  for (const block of blocks) {
-    visit(block.mdastNode, "cooklangIngredient", (node: CooklangIngredientNode) => {
-      const { modifier } = node.ingredient
-      if (modifier === "hidden" || modifier === "reference") return
-      ingredients.push(node.ingredient)
-    })
-  }
-  return ingredients
+interface ListedIngredient {
+  ingredient: ParsedIngredient
+  quantities: GroupedQuantity
+}
+
+function findLast<T>(items: T[], pred: (item: T) => boolean): T | undefined {
+  for (let i = items.length - 1; i >= 0; i--) if (pred(items[i]!)) return items[i]
+  return undefined
+}
+
+function sameName(a: ParsedIngredient, b: ParsedIngredient): boolean {
+  return a.name.trim().toLowerCase() === b.name.trim().toLowerCase()
+}
+
+// Resolves references the way cooklang-rs does, across the whole recipe (not per section):
+//   - `@&name` adds its quantity to the last earlier definition with the same name;
+//   - under `[duplicate: ref]`, a same-named ingredient (with the same optional-ness) is an
+//     implicit reference, otherwise a new definition;
+//   - `@&(~1)name` intermediate preparations are neither listed nor merged;
+//   - a reference without any earlier definition falls back to being a definition.
+// Each definition is listed once, in the section where it is defined, with the grouped
+// quantities of itself and all its references. Hidden (`@-`) definitions are not listed.
+function collectIngredients(sections: ParsedSection[]): ListedIngredient[][] {
+  const definitions: ListedIngredient[] = []
+  const perSection: ListedIngredient[][] = sections.map(() => [])
+
+  sections.forEach((section, sectionIdx) => {
+    for (const block of section.blocks) {
+      visit(block.mdastNode, "cooklangIngredient", (node: CooklangIngredientNode) => {
+        const ing = node.ingredient
+        if (ing.intermediate) return
+
+        let target: ListedIngredient | undefined
+        if (ing.modifier === "reference") {
+          target = findLast(definitions, (d) => sameName(d.ingredient, ing))
+        } else if (ing.implicitReference) {
+          const optional = ing.modifier === "optional"
+          target = findLast(
+            definitions,
+            (d) => sameName(d.ingredient, ing) && (d.ingredient.modifier === "optional") === optional,
+          )
+        }
+
+        if (target) {
+          target.quantities.add(ing.quantity, ing.unit)
+          return
+        }
+
+        const entry: ListedIngredient = { ingredient: ing, quantities: new GroupedQuantity() }
+        entry.quantities.add(ing.quantity, ing.unit)
+        definitions.push(entry)
+        if (ing.modifier !== "hidden") perSection[sectionIdx]!.push(entry)
+      })
+    }
+  })
+
+  return perSection
 }
 
 function collectCookware(sections: ParsedSection[]): ParsedCookware[] {
@@ -208,9 +264,10 @@ export function buildRecipeHast(
   // --- Ingredients section ---
   const ingredientsNodes: ElementContent[] = []
   let hasAnyIngredients = false
-  for (const section of recipe.sections) {
-    const ingredients = collectIngredients(section.blocks)
-    if (ingredients.length === 0) continue
+  const ingredientsPerSection = collectIngredients(recipe.sections)
+  recipe.sections.forEach((section, sectionIdx) => {
+    const ingredients = ingredientsPerSection[sectionIdx] ?? []
+    if (ingredients.length === 0) return
     hasAnyIngredients = true
     if (section.name) {
       ingredientsNodes.push(h("h3", { id: `ing-${slugify(section.name)}` }, section.name))
@@ -222,7 +279,7 @@ export function buildRecipeHast(
         ingredients.map((ing) => renderIngredientLi(ing, labels)),
       ),
     )
-  }
+  })
   if (hasAnyIngredients) ingredientsNodes.unshift(h("h2", { id: "ingredients" }, labels.ingredients))
 
   // --- Instructions section ---

@@ -9,6 +9,7 @@ import type {
   CooklangIngredientNode,
   CooklangTemperatureNode,
   CooklangTimerNode,
+  DuplicateMode,
   IngredientModifier,
   ParseMode,
   Quantity,
@@ -34,7 +35,7 @@ function scanName(src: string, pos: number): { nameRaw: string; nextPos: number;
   return { nameRaw, nextPos: pos + nameRaw.length, braceIdx: -1 }
 }
 
-function scanIngredientsAndCookware(src: string, mode: ParseMode): PhrasingContent[] {
+function scanIngredientsAndCookware(src: string, mode: ParseMode, duplicate: DuplicateMode): PhrasingContent[] {
   const nodes: PhrasingContent[] = []
   let pos = 0
   let textStart = 0
@@ -51,6 +52,7 @@ function scanIngredientsAndCookware(src: string, mode: ParseMode): PhrasingConte
       flushText(pos)
       pos++
       let modifier: IngredientModifier = null
+      let intermediate = false
       if (src[pos] === "@") {
         modifier = "recipe"
         pos++
@@ -65,7 +67,10 @@ function scanIngredientsAndCookware(src: string, mode: ParseMode): PhrasingConte
         pos++
         if (src[pos] === "(") {
           const closeIdx = src.indexOf(")", pos)
-          if (closeIdx !== -1) pos = closeIdx + 1
+          if (closeIdx !== -1) {
+            pos = closeIdx + 1
+            intermediate = true
+          }
         }
       } else if (src[pos] === "+") {
         modifier = "new"
@@ -101,6 +106,7 @@ function scanIngredientsAndCookware(src: string, mode: ParseMode): PhrasingConte
       }
 
       if (mode === "steps" && modifier !== "new") modifier = "reference"
+      const implicitReference = duplicate === "reference" && (modifier === null || modifier === "optional")
 
       const node: CooklangIngredientNode = {
         type: "cooklangIngredient",
@@ -111,6 +117,8 @@ function scanIngredientsAndCookware(src: string, mode: ParseMode): PhrasingConte
           unit,
           modifier,
           preparation: prepFromBraces ?? prepFromName,
+          ...(intermediate ? { intermediate: true as const } : {}),
+          ...(implicitReference ? { implicitReference: true as const } : {}),
         },
       }
       nodes.push(node)
@@ -156,7 +164,11 @@ function scanIngredientsAndCookware(src: string, mode: ParseMode): PhrasingConte
 // past the newly-inserted nodes during traversal).
 const HAS_INGREDIENT_OR_COOKWARE_RE = new RegExp(`[@${COOKWARE_MARKER}]`)
 
-export function substituteIngredientsAndCookware(root: RootContent, mode: ParseMode): void {
+export function substituteIngredientsAndCookware(
+  root: RootContent,
+  mode: ParseMode,
+  duplicate: DuplicateMode = "new",
+): void {
   visitParents(root, "text", (node: Text, parents: Parent[]) => {
     if (!HAS_INGREDIENT_OR_COOKWARE_RE.test(node.value)) return undefined
     const parent = parents[parents.length - 1]
@@ -165,7 +177,7 @@ export function substituteIngredientsAndCookware(root: RootContent, mode: ParseM
     const index = siblings.indexOf(node)
     if (index === -1) return undefined
 
-    const replacement = scanIngredientsAndCookware(node.value, mode)
+    const replacement = scanIngredientsAndCookware(node.value, mode, duplicate)
     siblings.splice(index, 1, ...replacement)
     return index + replacement.length
   })

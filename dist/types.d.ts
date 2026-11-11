@@ -19,6 +19,8 @@ interface ParsedIngredient {
     unit: string | null;
     modifier: IngredientModifier;
     preparation: string | null;
+    intermediate?: true;
+    implicitReference?: true;
 }
 interface ParsedCookware {
     name: string;

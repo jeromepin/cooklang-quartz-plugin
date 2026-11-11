@@ -5,7 +5,7 @@ import type { VFile } from "vfile"
 import type { QuartzTransformerPlugin, BuildCtx } from "@quartz-community/types"
 import { toString } from "mdast-util-to-string"
 import { visit } from "unist-util-visit"
-import type { CooklangTransformerOptions, ParseMode, ParsedSection } from "./types"
+import type { CooklangTransformerOptions, DuplicateMode, ParseMode, ParsedSection } from "./types"
 import { parseDuplicateDirective, parseModeDirective } from "./parser"
 import { cooklangTextTransform, decodeSectionSentinelMatch, SECTION_SENTINEL_RE } from "./textTransform"
 import {
@@ -56,6 +56,7 @@ export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransf
 
         const sections: ParsedSection[] = [{ name: null, blocks: [] }]
         let mode: ParseMode = "default"
+        let duplicate: DuplicateMode = "new"
 
         for (const node of tree.children) {
           if (node.type === "paragraph") {
@@ -73,11 +74,15 @@ export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransf
               continue
             }
 
-            if (parseDuplicateDirective(text) !== null) continue
+            const newDuplicate = parseDuplicateDirective(text)
+            if (newDuplicate !== null) {
+              duplicate = newDuplicate
+              continue
+            }
           }
 
           if (mode !== "text") {
-            substituteIngredientsAndCookware(node, mode)
+            substituteIngredientsAndCookware(node, mode, duplicate)
             substituteTemperature(node)
             substituteTimerSentinels(node)
           }
