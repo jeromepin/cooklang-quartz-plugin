@@ -1,4 +1,4 @@
-export { CooklangTransformer, CooklangTransformer as transformer } from "./transformer"
+export { CooklangTransformer, CooklangTransformer as transformer } from "./transformer";
 
 export type {
   CooklangCookwareNode,
@@ -16,7 +16,7 @@ export type {
   ParseMode,
   Quantity,
   SectionBlock,
-} from "./types"
+} from "./types";
 
 // Re-export Quartz plugin types for convenience
 export type {
@@ -24,4 +24,4 @@ export type {
   QuartzTransformerPlugin,
   QuartzTransformerPluginInstance,
   StaticResources,
-} from "@quartz-community/types"
+} from "@quartz-community/types";

@@ -1,36 +1,40 @@
-import type { PluggableList, Plugin } from "unified"
-import type { Root as MdastRoot, RootContent } from "mdast"
-import type { Root as HastRoot } from "hast"
-import type { VFile } from "vfile"
-import type { QuartzTransformerPlugin, BuildCtx } from "@quartz-community/types"
-import { toString } from "mdast-util-to-string"
-import { visit } from "unist-util-visit"
-import type { CooklangTransformerOptions, DuplicateMode, ParseMode, ParsedSection } from "./types"
-import { parseDuplicateDirective, parseModeDirective } from "./parser"
-import { cooklangTextTransform, decodeSectionSentinelMatch, SECTION_SENTINEL_RE } from "./textTransform"
+import type { PluggableList, Plugin } from "unified";
+import type { Root as MdastRoot, RootContent } from "mdast";
+import type { Root as HastRoot } from "hast";
+import type { VFile } from "vfile";
+import type { QuartzTransformerPlugin, BuildCtx } from "@quartz-community/types";
+import { toString } from "mdast-util-to-string";
+import { visit } from "unist-util-visit";
+import type { CooklangTransformerOptions, DuplicateMode, ParseMode, ParsedSection } from "./types";
+import { parseDuplicateDirective, parseModeDirective } from "./parser";
+import {
+  cooklangTextTransform,
+  decodeSectionSentinelMatch,
+  SECTION_SENTINEL_RE,
+} from "./textTransform";
 import {
   convertSoftBreaksToHardBreaks,
   substituteIngredientsAndCookware,
   substituteTemperature,
   substituteTimerSentinels,
-} from "./mdastSubstitutions"
-import { buildRecipeHast } from "./renderer"
-import recipeStyle from "./components/styles/recipe.scss"
+} from "./mdastSubstitutions";
+import { buildRecipeHast } from "./renderer";
+import recipeStyle from "./components/styles/recipe.scss";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore – .inline.ts imports are resolved to strings by tsup
-import recipeScript from "./components/scripts/recipe.inline.ts"
+import recipeScript from "./components/scripts/recipe.inline.ts";
 
 function hasDescendantOfType(node: RootContent, type: string): boolean {
-  let found = false
+  let found = false;
   visit(node, (n) => {
-    if (n.type === type) found = true
-  })
-  return found
+    if (n.type === type) found = true;
+  });
+  return found;
 }
 
 function isCooklangFile(file: VFile): boolean {
-  const fm = (file.data?.frontmatter ?? {}) as Record<string, unknown>
-  return fm["format"] === "cooklang"
+  const fm = (file.data?.frontmatter ?? {}) as Record<string, unknown>;
+  return fm["format"] === "cooklang";
 }
 
 export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransformerOptions>> = (
@@ -44,7 +48,7 @@ export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransf
     // (`== Section ==` vs `==highlight==`, `~timer{}` vs `~~strikethrough~~`) and
     // strips comments — see textTransform.ts for the full rationale.
     textTransform(_ctx: BuildCtx, src: string): string {
-      return cooklangTextTransform(src)
+      return cooklangTextTransform(src);
     },
 
     // Must run after Quartz's GitHubFlavoredMarkdown/ObsidianFlavoredMarkdown transformers
@@ -52,71 +56,75 @@ export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransf
     // task lists, wiki-links/embeds, etc. are already parsed into mdast before this runs.
     markdownPlugins(_ctx: BuildCtx): PluggableList {
       const cooklangRemark: Plugin<[], MdastRoot> = () => (tree: MdastRoot, file: VFile) => {
-        if (!isCooklangFile(file)) return
+        if (!isCooklangFile(file)) return;
 
-        const sections: ParsedSection[] = [{ name: null, blocks: [] }]
-        let mode: ParseMode = "default"
-        let duplicate: DuplicateMode = "new"
+        const sections: ParsedSection[] = [{ name: null, blocks: [] }];
+        let mode: ParseMode = "default";
+        let duplicate: DuplicateMode = "new";
 
         for (const node of tree.children) {
           if (node.type === "paragraph") {
-            const text = toString(node)
+            const text = toString(node);
 
-            const sectionMatch = text.match(SECTION_SENTINEL_RE)
+            const sectionMatch = text.match(SECTION_SENTINEL_RE);
             if (sectionMatch) {
-              sections.push({ name: decodeSectionSentinelMatch(sectionMatch), blocks: [] })
-              continue
+              sections.push({ name: decodeSectionSentinelMatch(sectionMatch), blocks: [] });
+              continue;
             }
 
-            const newMode = parseModeDirective(text)
+            const newMode = parseModeDirective(text);
             if (newMode !== null) {
-              mode = newMode
-              continue
+              mode = newMode;
+              continue;
             }
 
-            const newDuplicate = parseDuplicateDirective(text)
+            const newDuplicate = parseDuplicateDirective(text);
             if (newDuplicate !== null) {
-              duplicate = newDuplicate
-              continue
+              duplicate = newDuplicate;
+              continue;
             }
           }
 
           if (mode !== "text") {
-            substituteIngredientsAndCookware(node, mode, duplicate)
-            substituteTemperature(node)
-            substituteTimerSentinels(node)
+            substituteIngredientsAndCookware(node, mode, duplicate);
+            substituteTemperature(node);
+            substituteTimerSentinels(node);
           }
-          convertSoftBreaksToHardBreaks(node)
+          convertSoftBreaksToHardBreaks(node);
 
-          if (mode === "ingredients" && node.type === "paragraph" && !hasDescendantOfType(node, "cooklangIngredient")) {
-            continue
+          if (
+            mode === "ingredients" &&
+            node.type === "paragraph" &&
+            !hasDescendantOfType(node, "cooklangIngredient")
+          ) {
+            continue;
           }
 
-          const numbered = node.type === "paragraph" && mode !== "text"
-          sections.at(-1)!.blocks.push({ mdastNode: node, numbered, mode })
+          const numbered = node.type === "paragraph" && mode !== "text";
+          sections.at(-1)!.blocks.push({ mdastNode: node, numbered, mode });
         }
 
         // Drop the empty pre-amble section if the recipe starts with a section header.
         if (sections[0]?.name === null && sections[0].blocks.length === 0 && sections.length > 1) {
-          sections.shift()
+          sections.shift();
         }
 
-        file.data.cooklang = { sections }
-        tree.children = []
-      }
-      return [cooklangRemark]
+        file.data.cooklang = { sections };
+        tree.children = [];
+      };
+      return [cooklangRemark];
     },
 
     htmlPlugins(_ctx: BuildCtx): PluggableList {
       const cooklangRehype: Plugin<[], HastRoot> = () => (tree: HastRoot, file: VFile) => {
-        if (!file.data?.cooklang) return
+        if (!file.data?.cooklang) return;
 
-        const fm = (file.data?.frontmatter ?? {}) as Record<string, unknown>
-        const locale = (fm["locale"] as string | undefined) ?? "en"
+        const fm = (file.data?.frontmatter ?? {}) as Record<string, unknown>;
+        const locale = (fm["locale"] as string | undefined) ?? "en";
 
-        tree.children = buildRecipeHast(file.data.cooklang, fm, locale)
-      }
-      return [cooklangRehype]
+        tree.children = buildRecipeHast(file.data.cooklang, fm, locale);
+      };
+      return [cooklangRehype];
     },
 
     externalResources() {
@@ -129,7 +137,7 @@ export const CooklangTransformer: QuartzTransformerPlugin<Partial<CooklangTransf
             script: recipeScript as string,
           },
         ],
-      }
+      };
     },
-  }
-}
+  };
+};
