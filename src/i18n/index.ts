@@ -12,7 +12,8 @@ const locales: Record<string, Locale> = {
 
 export function i18n(locale?: string): Locale {
   if (!locale) return enUS
-  return locales[locale] ?? locales[locale.split("-")[0]] ?? enUS
+  const language = locale.split("-")[0] ?? locale
+  return locales[locale] ?? locales[language] ?? enUS
 }
 
 export type { Locale }
