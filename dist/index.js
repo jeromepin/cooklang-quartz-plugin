@@ -3283,7 +3283,8 @@ var locales = {
 };
 function i18n(locale) {
   if (!locale) return en_US_default;
-  return locales[locale] ?? locales[locale.split("-")[0]] ?? en_US_default;
+  const language = locale.split("-")[0] ?? locale;
+  return locales[locale] ?? locales[language] ?? en_US_default;
 }
 
 // src/quantity.ts
@@ -3435,7 +3436,11 @@ function renderBlock(block, stepNum) {
   if (stepNum !== null) {
     const first = children[0];
     if (first && first.type === "element") {
-      first.children = [h("span", { class: "step-num" }, `${stepNum}.`), { type: "text", value: " " }, ...first.children];
+      first.children = [
+        h("span", { class: "step-num" }, `${stepNum}.`),
+        { type: "text", value: " " },
+        ...first.children
+      ];
     }
     return h("div", { class: "step-block" }, children);
   }
@@ -3566,13 +3571,23 @@ function buildRecipeHast(recipe, frontmatter, locale) {
       h(
         "div",
         { class: "recipe-time-chips" },
-        timeChips.map((chip) => h("span", { class: "recipe-time-chip" }, [h("span", { class: "time-label" }, chip.label), " ", chip.value]))
+        timeChips.map(
+          (chip) => h("span", { class: "recipe-time-chip" }, [
+            h("span", { class: "time-label" }, chip.label),
+            " ",
+            chip.value
+          ])
+        )
       )
     );
   }
   if (source) {
     metaChildren.push(
-      h("a", { href: source, class: "recipe-source", target: "_blank", rel: "noopener noreferrer" }, `${labels.source} \u2197`)
+      h(
+        "a",
+        { href: source, class: "recipe-source", target: "_blank", rel: "noopener noreferrer" },
+        `${labels.source} \u2197`
+      )
     );
   }
   const metaHast = h("div", { class: "recipe-meta" }, metaChildren);
@@ -3585,7 +3600,10 @@ function buildRecipeHast(recipe, frontmatter, locale) {
         "ul",
         { class: "cookware-list" },
         allCookware.map(
-          (c) => h("li", c.quantity ? [c.name, " ", h("span", { class: "cw-qty" }, c.quantity)] : [c.name])
+          (c) => h(
+            "li",
+            c.quantity ? [c.name, " ", h("span", { class: "cw-qty" }, c.quantity)] : [c.name]
+          )
         )
       )
     );
@@ -3608,8 +3626,11 @@ function buildRecipeHast(recipe, frontmatter, locale) {
       )
     );
   });
-  if (hasAnyIngredients) ingredientsNodes.unshift(h("h2", { id: "ingredients" }, labels.ingredients));
-  const instructionsNodes = [h("h2", { id: "instructions" }, labels.instructions)];
+  if (hasAnyIngredients)
+    ingredientsNodes.unshift(h("h2", { id: "ingredients" }, labels.ingredients));
+  const instructionsNodes = [
+    h("h2", { id: "instructions" }, labels.instructions)
+  ];
   for (const section of recipe.sections) {
     if (section.blocks.length === 0) continue;
     if (section.name) {
@@ -3628,7 +3649,7 @@ function buildRecipeHast(recipe, frontmatter, locale) {
 var recipe_default = ".recipe-meta {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 1rem;\n  margin-bottom: 1.5rem;\n  padding: 0.75rem 1rem;\n  background-color: var(--light);\n  border: 1px solid var(--lightgray);\n  border-radius: 8px;\n}\n\n.servings-control {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  font-weight: 500;\n}\n\n.servings-btn {\n  width: 1.8rem;\n  height: 1.8rem;\n  border: 1px solid var(--lightgray);\n  background: var(--light);\n  color: var(--dark);\n  border-radius: 4px;\n  cursor: pointer;\n  font-size: 1rem;\n  line-height: 1;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  transition: background 0.15s;\n}\n.servings-btn:hover {\n  background: var(--lightgray);\n}\n\n#servings-display {\n  min-width: 1.5rem;\n  text-align: center;\n  font-weight: 700;\n}\n\n.recipe-time-chips {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0.5rem;\n}\n\n.recipe-time-chip {\n  font-size: 0.85rem;\n  padding: 0.2rem 0.6rem;\n  background: var(--lightgray);\n  border-radius: 20px;\n}\n.recipe-time-chip .time-label {\n  font-weight: 600;\n  margin-right: 0.2rem;\n}\n\n.recipe-source {\n  font-size: 0.85rem;\n  margin-left: auto;\n  color: var(--secondary);\n}\n\n.cookware-list,\n.ing-list {\n  list-style: none;\n  padding: 0;\n  margin: 0 0 1rem;\n}\n\n.ing-list li {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  padding: 0.3rem 0;\n  border-bottom: 1px solid var(--lightgray);\n  gap: 1rem;\n}\n.ing-list li:last-child {\n  border-bottom: none;\n}\n\n.ingredient_modifiers {\n  font-size: 0.65rem;\n  font-weight: 700;\n  color: var(--gray);\n  letter-spacing: 0.05em;\n  margin-right: 0.35rem;\n  vertical-align: middle;\n}\n.ingredient_modifiers.recipe-badge {\n  color: var(--secondary);\n}\n\n.ing-qty {\n  display: flex;\n  align-items: baseline;\n  gap: 0.2rem;\n  white-space: nowrap;\n  font-weight: 500;\n  flex-shrink: 0;\n}\n\n.unit {\n  color: var(--gray);\n  font-size: 0.9em;\n}\n\n.ing-prep {\n  font-style: italic;\n  color: var(--gray);\n  font-size: 0.9em;\n}\n\n.cookware-list li {\n  padding: 0.25rem 0;\n  border-bottom: 1px solid var(--lightgray);\n}\n.cookware-list li:last-child {\n  border-bottom: none;\n}\n\n.cw-qty {\n  color: var(--gray);\n  font-size: 0.9em;\n  margin-left: 0.25rem;\n}\n\n.step-block {\n  margin: 0 0 0.6rem;\n  padding: 0.6rem 0.9rem;\n  background: var(--light);\n  border-left: 3px solid var(--lightgray);\n  border-radius: 0 4px 4px 0;\n}\n.step-block p {\n  margin: 0;\n  line-height: 1.6;\n}\n.step-block.text-step {\n  border-left-color: transparent;\n  background: transparent;\n  padding-left: 0;\n}\n\n.step-num {\n  font-weight: 700;\n  margin-right: 0.35rem;\n  color: var(--secondary);\n}\n\n.ingredient_ref {\n  color: var(--secondary);\n  font-weight: 500;\n}\n\n.cookware_ref {\n  color: var(--tertiary);\n  font-style: italic;\n}\n\n.timer_ref {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.2rem;\n  font-weight: 500;\n  color: var(--dark);\n  background: var(--lightgray);\n  padding: 0.05rem 0.45rem;\n  border-radius: 4px;\n  font-size: 0.9em;\n}\n\n.cooklang-temperature {\n  font-weight: 500;\n}\n\n.recipe-link {\n  font-weight: 500;\n}";
 
 // src/components/scripts/recipe.inline.ts
-var recipe_inline_default = 'function l(){let s=document.getElementById("servings-display");if(!s)return;let c=parseInt(s.dataset.base??"1",10),n=c;function r(e){if(Number.isInteger(e))return e;let t=Math.round(e*10)/10;return Number.isInteger(t),t}function d(e){n=Math.max(1,n+e),s.textContent=String(n);let t=n/c;document.querySelectorAll(".scalable-value").forEach(a=>{let o=parseFloat(a.dataset.base??"0");a.textContent=String(r(o*t))}),document.querySelectorAll(".scalable-range").forEach(a=>{let o=parseFloat(a.dataset.baseLow??"0"),i=parseFloat(a.dataset.baseHigh??"0");a.textContent=`${r(o*t)}-${r(i*t)}`})}document.querySelectorAll(".servings-btn[data-delta]").forEach(e=>{let t=parseInt(e.dataset.delta??"0",10),a=()=>d(t);e.addEventListener("click",a),window.addCleanup(()=>e.removeEventListener("click",a))})}document.addEventListener("nav",l);\n';
+var recipe_inline_default = 'function i(){let r=document.getElementById("servings-display");if(!r)return;let c=parseInt(r.dataset.base??"1",10),a=c;function s(e){if(Number.isInteger(e))return e;let t=Math.round(e*10)/10;return Number.isInteger(t),t}function d(e){a=Math.max(1,a+e),r.textContent=String(a);let t=a/c;document.querySelectorAll(".scalable-value").forEach(n=>{let o=parseFloat(n.dataset.base??"0");n.textContent=String(s(o*t))}),document.querySelectorAll(".scalable-range").forEach(n=>{let o=parseFloat(n.dataset.baseLow??"0"),l=parseFloat(n.dataset.baseHigh??"0");n.textContent=`${s(o*t)}-${s(l*t)}`})}document.querySelectorAll(".servings-btn[data-delta]").forEach(e=>{let t=parseInt(e.dataset.delta??"0",10),n=()=>d(t);e.addEventListener("click",n),window.addCleanup(()=>e.removeEventListener("click",n))})}document.addEventListener("nav",i);\n';
 
 // src/transformer.ts
 function hasDescendantOfType(node2, type) {
